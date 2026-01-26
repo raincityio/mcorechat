@@ -11,8 +11,10 @@ from nio import (
     LoginError,
     RoomCreateError,
     RoomInviteError,
+    RoomMessageText,
     RoomSendError,
     RoomVisibility,
+    MatrixRoom,
 )
 from nio.client import AsyncClient
 
@@ -28,6 +30,11 @@ class MatrixChatter:
         self.clients = dict[UserId, AsyncClient]()
         self.clients_lock = asyncio.Lock()
         self.admin_user_id = UserId(config.admin_user, config.domain)
+        self.admin_client = AsyncClient(str(self.admin_user_id), config.admin_password.raw)
+        self.admin_client.add_event_callback(self.message_received, RoomMessageText)
+
+    async def message_received(self, room: MatrixRoom, event: RoomMessageText) -> None:
+        pass
 
     async def send_message(
         self, source: UserName, message: Message, event: Event, *, channel_name: Optional[ChannelName] = None
@@ -53,7 +60,7 @@ class MatrixChatter:
             if isinstance(resp, RoomCreateError):
                 if resp.status_code != "M_ROOM_IN_USE":
                     raise Exception(str(resp.status_code))
-            # await admin_client.sync()
+            await admin_client.sync()
             room = next(filter(lambda x: x.name == channel_name, admin_client.rooms.values()))
             room_id = room.room_id
             resp = await admin_client.room_invite(room_id, str(user_id))
