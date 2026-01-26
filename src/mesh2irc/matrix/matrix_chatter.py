@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import asyncio
+import json
 import logging
 from typing import Optional
 
+from meshcore.events import Event
 from nio import RoomVisibility
 from nio.client import AsyncClient
 
 from mesh2irc.chatter import ChannelName, Message, UserName
+from mesh2irc.common import JSONEncoder
 from mesh2irc.matrix.common import UserId
 from mesh2irc.matrix.config import Config
 from mesh2irc.matrix.new_user import create_user
@@ -39,7 +42,7 @@ class MatrixChatter:
         return room
 
     async def send_message(
-        self, source: UserName, message: Message, *, channel_name: Optional[ChannelName] = None
+        self, source: UserName, message: Message, event: Event, *, channel_name: Optional[ChannelName] = None
     ) -> None:
         assert channel_name is not None
 
@@ -77,7 +80,9 @@ class MatrixChatter:
             room_id = room.room_id
 
         await client.room_send(
-            room_id=room_id, message_type="m.room.message", content={"msgtype": "m.text", "body": message}
+            room_id=room_id,
+            message_type="m.room.message",
+            content={"msgtype": "m.text", "body": message, "meshcore_event": json.dumps(event, cls=JSONEncoder)},
         )
 
     async def get_client(self, user_id: UserId, password: str) -> AsyncClient:

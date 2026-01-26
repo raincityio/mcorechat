@@ -33,14 +33,14 @@ async def main_loop(config: Config, meshcore: MeshCore, chatter: Chatter):
 
     channel_infos = dict[int, ChannelName]()
 
-    async def get_channel_name(_channel_idx: int):
+    async def get_channel_name(_channel_idx: int) -> ChannelName:
         if _channel_idx == 0:
-            return "public"
+            return ChannelName("public")
         if _channel_idx in channel_infos:
             return channel_infos[_channel_idx]
         _channel_info = await meshcore.commands.get_channel(_channel_idx)
-        print(_channel_info)
-        return ChannelName("foo")
+        logging.debug(f"_channel_info: {_channel_info}")
+        return ChannelName(_channel_info.payload["channel_name"])
 
     async def drive_messages():
         while True:
@@ -53,7 +53,7 @@ async def main_loop(config: Config, meshcore: MeshCore, chatter: Chatter):
             user_name = UserName(user_name_raw)
             message = Message(rest.lstrip())
             channel_name = await get_channel_name(result.payload["channel_idx"])
-            await chatter.send_message(user_name, message, channel_name=channel_name)
+            await chatter.send_message(user_name, message, result, channel_name=channel_name)
             # break
 
     loop_f = asyncio.Future[None]()
