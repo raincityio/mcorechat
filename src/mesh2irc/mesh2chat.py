@@ -18,7 +18,7 @@ from mesh2irc.matrix.matrix_chatter import MatrixChatter
 
 
 async def get_meshcore(config: Config, task: Task[Any]):
-    meshcore = await MeshCore.create_serial(str(config.serial_device_path))
+    meshcore = await MeshCore.create_serial(str(config.serial_device_path))  # pyright: ignore [reportUnknownMemberType]
 
     async def disconnect_cb(_event: Event):
         logging.info(f"Serial Disconnected: {_event}")
