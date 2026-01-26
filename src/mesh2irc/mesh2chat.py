@@ -56,22 +56,21 @@ async def main_loop(config: Config, meshcore: MeshCore, chatter: Chatter):
             await chatter.send_message(user_name, message, channel_name=channel_name)
             # break
 
+    loop_f = asyncio.Future[None]()
+
     async def messages_waiting(event: Event):
-        await drive_messages()
+        try:
+            await drive_messages()
+        except Exception as e:
+            if loop_f.done():
+                logging.exception(e)
+            else:
+                loop_f.set_exception(e)
 
     meshcore.subscribe(EventType.MESSAGES_WAITING, messages_waiting)
     await drive_messages()
 
-    # print("DREW")
-
-    # await chatter.send_message(UserName("joe"), Message("test"), channel_name=ChannelName("testboo"))
-    # await chatter.send_message(UserName("sunshineee"), Message("test from sunshine"), channel_name=ChannelName("barf"))
-    # identity = await chatter.get_identity("sunshine")
-    # meshcore.start_auto_message_fetching()
-    # print(identity)
-
-    # wait forever
-    await asyncio.Event().wait()
+    await loop_f
 
 
 async def amain():

@@ -3,6 +3,7 @@ import asyncio
 import logging
 from typing import Optional
 
+from nio import RoomVisibility
 from nio.client import AsyncClient
 
 from mesh2irc.chatter import ChannelName, Message, UserName
@@ -56,7 +57,9 @@ class MatrixChatter:
         if room is None:
             admin_client = await self.get_client(self.admin_user_id, self.config.admin_password)
             await admin_client.sync()
-            resp = await admin_client.room_create(alias=channel_name, name=channel_name, topic=channel_name)
+            resp = await admin_client.room_create(
+                visibility=RoomVisibility.public, alias=channel_name, name=channel_name, topic=channel_name
+            )
             if hasattr(resp, "status_code"):
                 if resp.status_code != "M_ROOM_IN_USE":
                     raise Exception(str(resp.status_code))
