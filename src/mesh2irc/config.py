@@ -15,7 +15,7 @@ default_serial_device_path = Path("/dev/cu.usbmodem2301")
 
 @dataclasses.dataclass(frozen=True)
 class Config:
-    matrix: MatrixConfig = MatrixConfig()
+    matrix: MatrixConfig
     serial_device_path: Path = default_serial_device_path
     loglevel: int = logging.INFO
 
@@ -27,5 +27,5 @@ class Config:
         if "serial_device_path" in data:
             kwargs["serial_device_path"] = Path(data["serial_device_path"])
         if "loglevel" in data:
-            kwargs["loglevel"] = logging.getLevelName(data["loglevel"])
+            kwargs["loglevel"] = logging.getLevelName(data["loglevel"])  # pyright: ignore [reportDeprecated]
         return Config(**kwargs)

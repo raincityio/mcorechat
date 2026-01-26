@@ -3,11 +3,6 @@ from typing import Optional, Protocol, NewType
 
 from meshcore.events import Event
 
-
-class Identity(Protocol):
-    pass
-
-
 Message = NewType("Message", str)
 ChannelName = NewType("ChannelName", str)
 UserName = NewType("UserName", str)

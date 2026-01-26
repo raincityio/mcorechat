@@ -29,4 +29,5 @@ line-length = 120
 
 [tool.pyright]
 typeCheckingMode = "strict"
+reportMissingTypeStubs = "none"
 include = ["src"]

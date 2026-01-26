@@ -89,6 +89,7 @@ async def amain():
         config_data["loglevel"] = "DEBUG"
     config = Config.from_data(config_data)
     logging.root.setLevel(config.loglevel)
+    logging.getLogger("nio").setLevel(logging.WARNING)
     logging.debug(f"Config: {config}")
 
     main_task = asyncio.current_task()
