@@ -34,16 +34,15 @@ class MatrixChatter:
     ) -> None:
         assert channel_name is not None
 
-        user_id = UserId.create_sha_user_id(source, self.config.domain)
-        user_password = SecretText("password")
+        user_id = UserId.create_hashed_user_id(source, self.config.domain)
 
         try:
-            client = await self.get_client(user_id, user_password)
+            client = await self.get_client(user_id, self.config.user_password)
         except Exception as e:
             logging.error(e)
             admin_client = await self.get_client(self.admin_user_id, self.config.admin_password)
-            await self.create_user(SecretText(admin_client.access_token), user_id, source, user_password)
-            client = await self.get_client(user_id, user_password)
+            await self.create_user(SecretText(admin_client.access_token), user_id, source, self.config.user_password)
+            client = await self.get_client(user_id, self.config.user_password)
 
         room = next(filter(lambda x: x.name == channel_name, client.rooms.values()), None)
         if room is None:
@@ -90,7 +89,7 @@ class MatrixChatter:
         if client is None:
             async with self.clients_lock:
                 client = await self.login_user(user_id, password)
-                await client.sync()
+                # await client.sync()
                 new_clients = self.clients.copy()
                 new_clients[user_id] = client
                 self.clients = new_clients

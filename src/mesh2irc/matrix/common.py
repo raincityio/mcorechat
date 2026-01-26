@@ -7,6 +7,7 @@ from typing import NewType
 from mesh2irc.chatter import UserName
 
 DomainName = NewType("DomainName", str)
+HomeserverURL = NewType("HomeserverURL", str)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -35,5 +36,5 @@ class UserId:
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_sha_user_id(name: UserName, domain: DomainName):
+    def create_hashed_user_id(name: UserName, domain: DomainName):
         return UserId(UserName(sha256(name)), domain)

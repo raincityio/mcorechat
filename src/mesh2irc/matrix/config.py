@@ -3,7 +3,7 @@ import dataclasses
 from typing import Any
 
 from mesh2irc.chatter import UserName
-from mesh2irc.matrix.common import DomainName, SecretText
+from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL
 
 
 @dataclasses.dataclass(frozen=True)
@@ -11,7 +11,8 @@ class Config:
     domain: DomainName
     admin_user: UserName
     admin_password: SecretText
-    homeserver: str = "http://localhost:8008"
+    homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
+    user_password: SecretText = SecretText("password")
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
@@ -22,4 +23,8 @@ class Config:
             kwargs["admin_user"] = UserName(data["admin_user"])
         if "admin_password" in data:
             kwargs["admin_password"] = SecretText(data["admin_password"])
+        if "homeserver" in data:
+            kwargs["homeserver"] = HomeserverURL(data["homeserver"])
+        if "user_password" in data:
+            kwargs["user_password"] = SecretText(data["user_password"])
         return Config(**kwargs)

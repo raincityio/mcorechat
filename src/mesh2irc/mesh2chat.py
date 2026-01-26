@@ -29,7 +29,7 @@ async def get_meshcore(config: Config, task: Task[Any]):
     return meshcore
 
 
-async def main_loop(config: Config, meshcore: MeshCore, chatter: Chatter):
+async def main_loop(meshcore: MeshCore, chatter: Chatter):
 
     channel_infos = dict[int, ChannelName]()
 
@@ -59,6 +59,7 @@ async def main_loop(config: Config, meshcore: MeshCore, chatter: Chatter):
     loop_f = asyncio.Future[None]()
 
     async def messages_waiting(event: Event):
+        logging.debug(event)
         try:
             await drive_messages()
         except Exception as e:
@@ -97,7 +98,7 @@ async def amain():
 
     meshcore = await get_meshcore(config, main_task)
     chatter = MatrixChatter(config.matrix)
-    await main_loop(config, meshcore, chatter)
+    await main_loop(meshcore, chatter)
 
 
 def main():
