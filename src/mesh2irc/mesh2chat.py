@@ -49,12 +49,19 @@ async def main_loop(meshcore: MeshCore, chatter: Chatter):
             logging.debug(result)
             if (result.type == EventType.NO_MORE_MSGS) or (result.type == EventType.ERROR):
                 break
-
-            user_name_raw, rest = str(result.payload["text"]).split(":", 1)
-            user_name = UserName(user_name_raw)
-            message = Message(rest.lstrip())
-            channel_name = await get_channel_name(result.payload["channel_idx"])
-            await chatter.send_message(user_name, message, result, channel_name=channel_name)
+            message_type = result.payload["type"]
+            if message_type == "CHAN":
+                user_name_raw, rest = str(result.payload["text"]).split(":", 1)
+                user_name = UserName(user_name_raw)
+                message = Message(rest.lstrip())
+                channel_name = await get_channel_name(result.payload["channel_idx"])
+                if channel_name == "":
+                    logging.warning(f"Unknown channel: {result}")
+                else:
+                    await chatter.send_message(user_name, message, result, channel_name=channel_name)
+            elif message_type == "PRIV":
+                # TODO
+                logging.debug(f"Private Message: {result}")
             # break
 
     loop_f = asyncio.Future[None]()
