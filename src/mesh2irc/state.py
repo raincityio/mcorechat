@@ -8,3 +8,6 @@ from mesh2irc.chatter import MessageId
 class State(Protocol):
     def is_message_id_marked(self, message_id: MessageId) -> bool: ...
     def mark_message_id(self, message_id: MessageId) -> bool: ...
+
+
+__all__ = ["State"]

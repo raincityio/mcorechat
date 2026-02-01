@@ -1,37 +1,10 @@
 #!/usr/bin/env python3
-import dataclasses
 from collections.abc import Callable, Awaitable
-from typing import Optional, Protocol, Union, NewType
+from typing import Optional, Protocol, Union
 
 from meshcore.events import Event
 
-Message = NewType("Message", str)
-MessageId = NewType("MessageId", str)
-# ChannelName = NewType("ChannelName", str)
-# UserName = NewType("UserName", str)
-
-
-# @dataclasses.dataclass(frozen=True)
-# class Message:
-#     content: str
-#     id: str
-
-
-@dataclasses.dataclass(frozen=True)
-class ChannelName:
-    raw: str
-
-    def __str__(self) -> str:
-        return self.raw
-
-
-@dataclasses.dataclass(frozen=True)
-class UserName:
-    raw: str
-
-    def __str__(self) -> str:
-        return self.raw
-
+from mesh2irc.common import UserName, ChannelName, Message, MessageId
 
 Destination = Union[UserName, ChannelName]
 ChannelCallback = Callable[[UserName, Destination, Message, MessageId], Awaitable[None]]
@@ -46,3 +19,6 @@ class Chatter(Protocol):
     async def add_message_callback(self, cb: ChannelCallback) -> None: ...
 
     async def remove_message_callback(self, cb: ChannelCallback) -> None: ...
+
+
+__all__ = ["Destination", "ChannelCallback", "Chatter"]

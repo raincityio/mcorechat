@@ -2,19 +2,29 @@
 
 
 import asyncio
-import dataclasses
 import logging
 import signal
 from argparse import ArgumentParser
 from asyncio import Task, TaskGroup, AbstractEventLoop
 from pathlib import Path
-from typing import Any, Optional, NewType
+from typing import Any, Optional
 
 import yaml
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mesh2irc.chatter import Chatter, UserName, Message, ChannelName, Destination, MessageId
+from mesh2irc.chatter import Chatter, Destination
+from mesh2irc.common import (
+    Contact,
+    Channel,
+    ContactName,
+    PublicKey,
+    PublicKeyPrefix,
+    ChannelName,
+    UserName,
+    Message,
+    MessageId,
+)
 from mesh2irc.config import Config, default_config_path
 from mesh2irc.json_state import JsonState
 from mesh2irc.matrix.matrix_chatter import MatrixChatter
@@ -31,23 +41,6 @@ async def get_meshcore(config: Config, task: Task[Any]):
     meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
 
     return meshcore
-
-
-@dataclasses.dataclass(frozen=True)
-class Channel:
-    name: ChannelName
-    idx: int
-
-
-ContactName = NewType("ContactName", str)
-PublicKey = NewType("PublicKey", str)
-PublicKeyPrefix = NewType("PublicKeyPrefix", str)
-
-
-@dataclasses.dataclass(frozen=True)
-class Contact:
-    name: ContactName
-    public_key: PublicKey
 
 
 class MeshCorePlus:

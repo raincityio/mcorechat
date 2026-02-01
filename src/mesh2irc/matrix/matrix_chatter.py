@@ -23,8 +23,8 @@ from nio import (
 )
 from nio.client import AsyncClient
 
-from mesh2irc.chatter import ChannelName, Message, UserName, ChannelCallback, MessageId
-from mesh2irc.common import JSONEncoder
+from mesh2irc.chatter import ChannelCallback
+from mesh2irc.common import JSONEncoder, Message, MessageId, UserName, ChannelName
 from mesh2irc.matrix.common import UserId, SecretText
 from mesh2irc.matrix.config import Config
 
@@ -227,3 +227,6 @@ class MatrixChatter:
                 else:
                     text = await resp.text()
                     raise Exception(f"Failed ({resp.status}): {text}")
+
+
+__all__ = ["MatrixChatter"]

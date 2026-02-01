@@ -32,3 +32,6 @@ class Config:
         if "json_state_config" in data:
             kwargs["json_state_config"] = json_state.Config.from_data(data["json_state_config"])
         return Config(**kwargs)
+
+
+__all__ = ["default_config_path", "Config"]

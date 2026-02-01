@@ -28,3 +28,6 @@ class Config:
         if "user_password" in data:
             kwargs["user_password"] = SecretText(data["user_password"])
         return Config(**kwargs)
+
+
+__all__ = ["Config"]

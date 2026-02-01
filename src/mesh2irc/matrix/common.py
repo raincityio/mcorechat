@@ -44,3 +44,6 @@ class UserId:
         assert raw.startswith("@")
         user_raw, domain_raw = raw[1:].split(":", 1)
         return UserId(UserName(user_raw), DomainName(domain_raw))
+
+
+__all__ = ["DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
