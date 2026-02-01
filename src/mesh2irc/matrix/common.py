@@ -37,4 +37,10 @@ class UserId:
 
     @staticmethod
     def create_hashed_user_id(name: UserName, domain: DomainName):
-        return UserId(UserName(sha256(name)), domain)
+        return UserId(UserName(sha256(str(name))), domain)
+
+    @staticmethod
+    def parse_user_id(raw: str):
+        assert raw.startswith("@")
+        user_raw, domain_raw = raw[1:].split(":", 1)
+        return UserId(UserName(user_raw), DomainName(domain_raw))
