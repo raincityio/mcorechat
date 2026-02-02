@@ -26,7 +26,7 @@ class ChannelName:
 
 
 @dataclasses.dataclass(frozen=True)
-class UserName:
+class ContactName:
     raw: str
 
     def __str__(self) -> str:
@@ -39,7 +39,7 @@ class Channel:
     idx: int
 
 
-ContactName = NewType("ContactName", str)
+# ContactName = NewType("ContactName", str)
 PublicKey = NewType("PublicKey", str)
 PublicKeyPrefix = NewType("PublicKeyPrefix", str)
 
@@ -70,7 +70,6 @@ __all__ = [
     "Message",
     "MessageId",
     "ChannelName",
-    "UserName",
     "Channel",
     "ContactName",
     "PublicKey",

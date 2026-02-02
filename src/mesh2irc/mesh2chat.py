@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import logging.config
 import signal
 from argparse import ArgumentParser
 from asyncio import Task, TaskGroup, AbstractEventLoop
@@ -21,21 +22,31 @@ from mesh2irc.common import (
     PublicKey,
     PublicKeyPrefix,
     ChannelName,
-    UserName,
     Message,
     MessageId,
 )
-from mesh2irc.config import Config, default_config_path
+from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.json_state import JsonState
 from mesh2irc.matrix.matrix_chatter import MatrixChatter
 
+logger = logging.getLogger(__name__)
 
-async def get_meshcore(config: Config, task: Task[Any]):
-    # meshcore = await MeshCore.create_serial(str(config.serial_device_path))  # pyright: ignore [reportUnknownMemberType]
-    meshcore = await MeshCore.create_tcp("pluto.elisha.raincity.io", 5678)
+
+async def get_meshcore(config: MeshCoreConfig, task: Task[Any]):
+    if config.driver == MeshCoreDriver.SERIAL:
+        assert config.serial_device_path is not None
+        meshcore = await MeshCore.create_serial(  # pyright: ignore [reportUnknownMemberType]
+            str(config.serial_device_path)
+        )
+    elif config.driver == MeshCoreDriver.TCP:
+        meshcore = await MeshCore.create_tcp(  # pyright: ignore [reportUnknownMemberType]
+            config.tcp_endpoint[0], config.tcp_endpoint[1]
+        )
+    else:
+        raise Exception(f"Unknown driver: {config.driver}")
 
     async def disconnect_cb(_event: Event):
-        logging.info(f"Serial Disconnected: {_event}")
+        logger.info(f"Serial Disconnected: {_event}")
         task.cancel()
 
     meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
@@ -120,22 +131,22 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
             message_type = result.payload["type"]
             if message_type == "CHAN":
                 user_name_raw, rest = str(result.payload["text"]).split(":", 1)
-                user_name = UserName(user_name_raw)
+                contact_name = ContactName(user_name_raw)
                 message = Message(rest.lstrip())
                 channel = await mcp.get_channel(idx=result.payload["channel_idx"])
                 if channel is None:
-                    logging.warning(f"Unknown channel: {result}")
+                    logger.warning(f"Unknown channel: {result}")
                 else:
-                    await chatter.send_message(user_name, message, result, channel_name=channel.name)
+                    await chatter.send_message(contact_name, message, result, channel_name=channel.name)
             elif message_type == "PRIV":
                 public_key_prefix = PublicKeyPrefix(result.payload["pubkey_prefix"])
                 contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
-                logging.debug(f"Private Message: {result} {contact}")
+                logger.debug(f"Private Message: {result} {contact}")
                 if contact is None:
-                    logging.warning(f"Unknown contact: {result}")
+                    logger.warning(f"Unknown contact: {result}")
                 else:
                     message = Message(result.payload["text"])
-                    await chatter.send_message(UserName(contact.name), message, result)
+                    await chatter.send_message(contact.name, message, result)
             else:
                 raise Exception(f"Unknown message type: {message_type}")
 
@@ -146,7 +157,7 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
             await drive_messages()
         except Exception as e:
             if loop_f.done():
-                logging.exception(e)
+                logger.exception(e)
             else:
                 loop_f.set_exception(e)
 
@@ -185,27 +196,34 @@ async def amain():
     if args.d:
         config_data["loglevel"] = "DEBUG"
     config = Config.from_data(config_data)
-    logging.root.setLevel(config.loglevel)
-    logging.getLogger("nio").setLevel(logging.WARNING)
-    logging.debug(f"Config: {config}")
 
-    meshcore = await get_meshcore(config, main_task)
+    try:
+        logging_config_data = yaml.load(config.logging_config_path.read_text(), Loader=yaml.FullLoader)
+        logging.config.dictConfig(logging_config_data)
+    except FileNotFoundError:
+        pass
+
+    if config.loglevel is not None:
+        logger.setLevel(config.loglevel)
+    logger.debug(f"Config: {config}")
+
+    meshcore = await get_meshcore(config.meshcore, main_task)
     chatter = MatrixChatter(config.matrix)
-    state = JsonState(config.json_state_config)
+    state = JsonState(config.json_state)
     state.load()
     mcp = MeshCorePlus(meshcore)
 
-    async def message_callback(user: UserName, destination: Destination, message: Message, message_id: MessageId):
-        logging.debug(f"Message: {user} {destination} {message}")
+    async def message_callback(source: ContactName, destination: Destination, message: Message, message_id: MessageId):
+        logger.debug(f"Message: {source} {destination} {message}")
         if state.is_message_id_marked(message_id):
-            logging.debug(f"Message marked: {message_id}")
+            logger.debug(f"Message marked: {message_id}")
             return
-        if type(destination) is UserName:
-            contact = await mcp.get_contact(name=ContactName(destination.raw))
+        if type(destination) is ContactName:
+            contact = await mcp.get_contact(name=destination)
             if contact is None:
                 raise Exception(f"Unknown contact: {destination}")
             result = await meshcore.commands.send_msg(contact.public_key, message)
-            logging.debug(f"send message {result}")
+            logger.debug(f"send message {result}")
         elif type(destination) is ChannelName:
             channel = await mcp.get_channel(name=destination)
             if channel is None:
@@ -213,7 +231,7 @@ async def amain():
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
                 channel.idx, message
             )
-            logging.debug(f"send message {result}")
+            logger.debug(f"send message {result}")
         else:
             raise Exception(f"Unknown destination: {destination}")
         state.mark_message_id(message_id)

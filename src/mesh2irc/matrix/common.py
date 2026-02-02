@@ -4,7 +4,7 @@ import dataclasses
 import hashlib
 from typing import NewType
 
-from mesh2irc.chatter import UserName
+from mesh2irc.common import ContactName
 
 DomainName = NewType("DomainName", str)
 HomeserverURL = NewType("HomeserverURL", str)
@@ -29,21 +29,21 @@ def sha256(text: str) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class UserId:
-    name: UserName
+    name: ContactName
     domain: DomainName
 
     def __str__(self):
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_hashed_user_id(name: UserName, domain: DomainName):
-        return UserId(UserName(sha256(str(name))), domain)
+    def create_hashed_user_id(name: ContactName, domain: DomainName):
+        return UserId(ContactName(sha256(str(name))), domain)
 
     @staticmethod
     def parse_user_id(raw: str):
         assert raw.startswith("@")
         user_raw, domain_raw = raw[1:].split(":", 1)
-        return UserId(UserName(user_raw), DomainName(domain_raw))
+        return UserId(ContactName(user_raw), DomainName(domain_raw))
 
 
 __all__ = ["DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
