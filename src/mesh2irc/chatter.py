@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 from collections.abc import Callable, Awaitable
-from typing import Protocol, Union
+from typing import Protocol
 
 from meshcore.events import Event
 
 from mesh2irc.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
 
-Destination = Union[ContactName, ChannelName]
 DirectCallback = Callable[[PublicKey, Message, MessageId], Awaitable[None]]
 ChannelCallback = Callable[[ChannelName, Message, MessageId], Awaitable[None]]
 
@@ -26,4 +25,4 @@ class Chatter(Protocol):
     async def add_channel_callback(self, cb: ChannelCallback) -> None: ...
 
 
-__all__ = ["Destination", "ChannelCallback", "Chatter"]
+__all__ = ["DirectCallback", "ChannelCallback", "Chatter"]

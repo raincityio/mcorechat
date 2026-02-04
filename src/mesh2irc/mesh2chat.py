@@ -250,7 +250,8 @@ async def amain():
                 async for contact in mcp.list_contacts():
                     await chatter.update_contact(contact)
 
-            g.create_task(seed_contacts())
+            if config.seed_contacts:
+                g.create_task(seed_contacts())
 
             async def commiter():
                 while True:

@@ -41,7 +41,6 @@ class MatrixChatter:
         self.admin_client = AsyncClient(config.homeserver, str(self.admin_user_id))
         self.direct_callbacks = set[DirectCallback]()
         self.channel_callbacks = set[ChannelCallback]()
-        self.contacts = dict[UserId, Contact]()
 
     async def init(self):
         resp = await self.admin_client.login(self.config.admin_password.raw)
@@ -49,37 +48,32 @@ class MatrixChatter:
             raise Exception(f"Login failed: {resp}")
 
     async def update_contact(self, contact: Contact):
-        logging.error(f"Updating contact: {contact}")
+        logger.debug(f"Updating contact: {contact}")
         user_id = UserId.create_from_contact(contact, self.config.domain)
-        existing = self.contacts.get(user_id, None)
-        if contact != existing:
-            self.contacts[user_id] = contact
-            if self.config.trusted_suffix is None:
-                trusted_display_name = contact.name
-            else:
-                trusted_display_name = ContactName(f"{contact.name} {self.config.trusted_suffix}")
-            await self.create_user(
-                SecretText(self.admin_client.access_token),
-                user_id,
-                trusted_display_name,
-                self.config.user_password,
-            )
+        if self.config.trusted_suffix is None:
+            trusted_display_name = contact.name
+        else:
+            trusted_display_name = ContactName(f"{contact.name} {self.config.trusted_suffix}")
+        await self.update_user(
+            user_id,
+            trusted_display_name,
+            self.config.user_password,
+        )
 
-    async def add_direct_callback(self, cb: DirectCallback):
+    async def add_direct_callback(self, cb: DirectCallback) -> None:
         self.direct_callbacks.add(cb)
 
     async def add_channel_callback(self, cb: ChannelCallback) -> None:
         self.channel_callbacks.add(cb)
 
     async def run(self):
-        # await self.join_user(SecretText(resp.access_token), ChannelName("Public"), self.admin_user_id)
 
         async def room_message_cb(room: MatrixRoom, event: nio.rooms.Event):
-            message = Message(event.source["content"]["body"])
-            message_id = MessageId(event.event_id)
             source = UserId.parse_user_id(event.sender)
             if source != self.admin_user_id:
                 return
+            message = Message(event.source["content"]["body"])
+            message_id = MessageId(event.event_id)
             if room.is_group:
                 # private message, get the room members
                 resp = await self.admin_client.joined_members(room.room_id)
@@ -87,19 +81,18 @@ class MatrixChatter:
                     raise Exception(str(resp.status_code))
                 for member in cast(JoinedMembersResponse, resp).members:
                     member_user_id = UserId.parse_user_id(member.user_id)
-                    if member_user_id == self.admin_user_id:
-                        logger.debug("FOUND ADMIN")
-                    else:
+                    if member_user_id != self.admin_user_id:
                         for cb in self.direct_callbacks:
                             public_key = member_user_id.public_key
-                            assert public_key is not None
-                            await cb(public_key, message, message_id)
-                pass
+                            if public_key is None:
+                                # TODO message a warning
+                                logger.warning(f"public_key is None: {member_user_id}")
+                            else:
+                                await cb(public_key, message, message_id)
             else:
-                room_name = room.name
-                assert room_name is not None
+                assert room.name is not None
                 for cb in self.channel_callbacks:
-                    await cb(ChannelName(room_name), message, message_id)
+                    await cb(ChannelName(room.name), message, message_id)
 
         self.admin_client.add_event_callback(room_message_cb, RoomMessage)
 
@@ -115,6 +108,8 @@ class MatrixChatter:
                 raise Exception(str(resp.status_code))
 
         self.admin_client.add_event_callback(room_member_cb, RoomMemberEvent)
+
+        # enter into forever loop
         await self.admin_client.sync_forever()
 
     def log_room(self, room: MatrixRoom):
@@ -124,18 +119,17 @@ class MatrixChatter:
         logger.info(f"Room.group_name: {room.group_name()}")
 
     async def send_direct(self, source: Contact, message: Message, event: Event):
-        logger.debug(f"Sending direct message: {source} {message} {event}")
-        user_id = UserId.create_from_contact(source, self.config.domain)
-        client = await self.get_client(user_id, self.config.user_password)
-        for room in client.rooms.values():
-            self.log_room(room)
+        source_user_id = UserId.create_from_contact(source, self.config.domain)
+        # TODO may need to create a user
+        source_client = await self.get_client(source_user_id, self.config.user_password)
+        for room in source_client.rooms.values():
             if not room.is_group:
                 continue
             if room.group_name() == str(self.admin_user_id.name):
                 break
         else:
             raise Exception(f"Source not found: {source}")
-        resp = await client.room_send(
+        resp = await source_client.room_send(
             room_id=room.room_id,
             message_type="m.room.message",
             content={"msgtype": "m.text", "body": message, "meshcore_event": json.dumps(event, cls=JSONEncoder)},
@@ -146,21 +140,17 @@ class MatrixChatter:
     async def send_channel(
         self, source: ContactName, message: Message, event: Event, channel_name: ChannelName
     ) -> None:
-
-        user_id = UserId.create_from_contact_name(source, self.config.domain)
-
+        source_user_id = UserId.create_from_contact_name(source, self.config.domain)
         try:
-            client = await self.get_client(user_id, self.config.user_password)
+            source_client = await self.get_client(source_user_id, self.config.user_password)
         except Exception as e:
             logger.error(e)
-            admin_client = await self.get_client(self.admin_user_id, self.config.admin_password)
-            await self.create_user(SecretText(admin_client.access_token), user_id, source, self.config.user_password)
-            client = await self.get_client(user_id, self.config.user_password)
+            await self.update_user(source_user_id, source, self.config.user_password)
+            source_client = await self.get_client(source_user_id, self.config.user_password)
 
-        room = next(filter(lambda x: x.name == str(channel_name), client.rooms.values()), None)
-        logger.debug(f"Sending message to: {channel_name}")
+        room = next(filter(lambda x: x.name == str(channel_name), source_client.rooms.values()), None)
         if room is None:
-            logger.debug(f"Creating new room: {user_id} {channel_name}")
+            logger.debug(f"Creating new room: {source_user_id} {channel_name}")
             resp = await self.admin_client.room_create(
                 visibility=RoomVisibility.public,
                 alias=str(channel_name),
@@ -177,18 +167,18 @@ class MatrixChatter:
 
             room = next(filter(lambda x: x.name == str(channel_name), self.admin_client.rooms.values()))
             room_id = room.room_id
-            resp = await self.admin_client.room_invite(room_id, str(user_id))
+            resp = await self.admin_client.room_invite(room_id, str(source_user_id))
             if isinstance(resp, RoomInviteError):
                 # strangely invite returns this if you do it twice for the same user
                 if resp.status_code != "M_FORBIDDEN":
                     raise Exception(str(resp.status_code))
-            resp = await client.join(room_id)
+            resp = await source_client.join(room_id)
             if isinstance(resp, JoinError):
                 raise Exception(str(resp.status_code))
         else:
             room_id = room.room_id
 
-        resp = await client.room_send(
+        resp = await source_client.room_send(
             room_id=room_id,
             message_type="m.room.message",
             content={"msgtype": "m.text", "body": message, "meshcore_event": json.dumps(event, cls=JSONEncoder)},
@@ -217,24 +207,22 @@ class MatrixChatter:
             await client.sync(full_state=True)
         return client
 
-    async def join_user(self, admin_token: SecretText, channel_name: ChannelName, user_id: UserId):
-        url = f"{self.config.homeserver}/_synapse/admin/v1/join/Public"
-        payload = {
-            "user_id": str(user_id),
-        }
-        headers = {"Authorization": f"Bearer {admin_token.raw}", "Content-Type": "application/json"}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status == 200 or resp.status == 201:
-                    logger.debug(f"User joined: {user_id}")
-                else:
-                    text = await resp.text()
-                    raise Exception(text)
+    # async def join_user(self, channel_name: ChannelName, user_id: UserId):
+    #     url = f"{self.config.homeserver}/_synapse/admin/v1/join/Public"
+    #     payload = {
+    #         "user_id": str(user_id),
+    #     }
+    #     headers = {"Authorization": f"Bearer {self.admin_client.access_token}", "Content-Type": "application/json"}
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.post(url, headers=headers, json=payload) as resp:
+    #             if resp.status == 200 or resp.status == 201:
+    #                 logger.debug(f"User joined: {user_id}")
+    #             else:
+    #                 text = await resp.text()
+    #                 raise Exception(text)
 
-    async def create_user(
-        self, admin_token: SecretText, user_id: UserId, display_name: ContactName, user_password: SecretText
-    ):
-        logger.error(f"Creating user: {user_id} @ {self.config.homeserver} {display_name}")
+    async def update_user(self, user_id: UserId, display_name: ContactName, user_password: SecretText):
+        logger.error(f"Updating user: {user_id} @ {self.config.homeserver} {display_name}")
         url = f"{self.config.homeserver}/_synapse/admin/v2/users/{user_id}"
         payload = {
             "password": user_password.raw,
@@ -242,7 +230,7 @@ class MatrixChatter:
             "deactivated": False,
             "displayname": str(display_name),
         }
-        headers = {"Authorization": f"Bearer {admin_token.raw}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {self.admin_client.access_token}", "Content-Type": "application/json"}
 
         async with aiohttp.ClientSession() as session:
             async with session.put(url, headers=headers, json=payload) as resp:
