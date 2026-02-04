@@ -14,7 +14,7 @@ import yaml
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mesh2irc.chatter import Chatter, Destination
+from mesh2irc.chatter import Chatter
 from mesh2irc.common import (
     Contact,
     Channel,
@@ -91,6 +91,23 @@ class MeshCorePlus:
             return None
         raise Exception("Missing channel key")
 
+    async def get_contacts(self):
+        if self.cached_contacts is None:
+            _cached_contacts: set[Contact] = set()
+            _contacts = await self.meshcore.commands.get_contacts()
+            if _contacts.type == EventType.ERROR:
+                raise Exception(f"get_contacts error: {_contacts}")
+            for _contact in _contacts.payload.values():
+                _name = ContactName(_contact["adv_name"])
+                _public_key = PublicKey(_contact["public_key"])
+                _cached_contacts.add(Contact(_name, _public_key))
+            self.cached_contacts = _cached_contacts
+        return self.cached_contacts
+
+    async def list_contacts(self):
+        for contact in await self.get_contacts():
+            yield contact
+
     async def get_contact(
         self,
         *,
@@ -98,26 +115,12 @@ class MeshCorePlus:
         public_key: Optional[PublicKey] = None,
         public_key_prefix: Optional[PublicKeyPrefix] = None,
     ):
-
-        async def get_contacts():
-            if self.cached_contacts is None:
-                _cached_contacts: set[Contact] = set()
-                _contacts = await self.meshcore.commands.get_contacts()
-                if _contacts.type == EventType.ERROR:
-                    raise Exception(f"get_contacts error: {_contacts}")
-                for _contact in _contacts.payload.values():
-                    _name = ContactName(_contact["adv_name"])
-                    _public_key = PublicKey(_contact["public_key"])
-                    _cached_contacts.add(Contact(_name, _public_key))
-                self.cached_contacts = _cached_contacts
-            return self.cached_contacts
-
         if name is not None:
-            return next(filter(lambda x: x.name == name, await get_contacts()), None)
+            return next(filter(lambda x: x.name == name, await self.get_contacts()), None)
         elif public_key is not None:
-            return next(filter(lambda x: x.public_key == public_key, await get_contacts()), None)
+            return next(filter(lambda x: x.public_key == public_key, await self.get_contacts()), None)
         elif public_key_prefix is not None:
-            return next(filter(lambda x: x.public_key.startswith(public_key_prefix), await get_contacts()), None)
+            return next(filter(lambda x: x.public_key.startswith(public_key_prefix), await self.get_contacts()), None)
         raise Exception("Missing contact key")
 
 
@@ -137,7 +140,7 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
                 if channel is None:
                     logger.warning(f"Unknown channel: {result}")
                 else:
-                    await chatter.send_message(contact_name, message, result, channel_name=channel.name)
+                    await chatter.send_channel(contact_name, message, result, channel.name)
             elif message_type == "PRIV":
                 public_key_prefix = PublicKeyPrefix(result.payload["pubkey_prefix"])
                 contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
@@ -146,7 +149,7 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
                     logger.warning(f"Unknown contact: {result}")
                 else:
                     message = Message(result.payload["text"])
-                    await chatter.send_message(contact.name, message, result)
+                    await chatter.send_direct(contact, message, result)
             else:
                 raise Exception(f"Unknown message type: {message_type}")
 
@@ -209,39 +212,45 @@ async def amain():
 
     meshcore = await get_meshcore(config.meshcore, main_task)
     chatter = MatrixChatter(config.matrix)
+    await chatter.init()
     state = JsonState(config.json_state)
     state.load()
     mcp = MeshCorePlus(meshcore)
 
-    async def message_callback(source: ContactName, destination: Destination, message: Message, message_id: MessageId):
-        logger.debug(f"Message: {source} {destination} {message}")
+    async def channel_callback(channel_name: ChannelName, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
             return
-        if type(destination) is ContactName:
-            contact = await mcp.get_contact(name=destination)
-            if contact is None:
-                raise Exception(f"Unknown contact: {destination}")
-            result = await meshcore.commands.send_msg(contact.public_key, message)
-            logger.debug(f"send message {result}")
-        elif type(destination) is ChannelName:
-            channel = await mcp.get_channel(name=destination)
-            if channel is None:
-                raise Exception(f"Unknown channel: {destination}")
-            result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
-                channel.idx, message
-            )
-            logger.debug(f"send message {result}")
-        else:
-            raise Exception(f"Unknown destination: {destination}")
+        channel = await mcp.get_channel(name=channel_name)
+        if channel is None:
+            raise Exception(f"Unknown channel: {channel_name}")
+        result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
+            channel.idx, message
+        )
+        logger.debug(f"send message {result}")
         state.mark_message_id(message_id)
 
-    await chatter.add_message_callback(message_callback)
+    async def direct_callback(contact: Contact, message: Message, message_id: MessageId):
+        if state.is_message_id_marked(message_id):
+            logger.debug(f"Message marked: {message_id}")
+            return
+        result = await meshcore.commands.send_msg(contact.public_key, message)
+        logger.debug(f"send message {result}")
+        state.mark_message_id(message_id)
+
+    await chatter.add_channel_callback(channel_callback)
+    await chatter.add_direct_callback(direct_callback)
 
     try:
         async with TaskGroup() as g:
             g.create_task(chatter.run())
             g.create_task(main_loop(mcp, chatter))
+
+            async def seed_contacts():
+                async for contact in mcp.list_contacts():
+                    await chatter.update_contact(contact)
+
+            g.create_task(seed_contacts())
 
             async def commiter():
                 while True:
