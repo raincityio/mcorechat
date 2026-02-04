@@ -230,11 +230,11 @@ async def amain():
         logger.debug(f"send message {result}")
         state.mark_message_id(message_id)
 
-    async def direct_callback(contact: Contact, message: Message, message_id: MessageId):
+    async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
             return
-        result = await meshcore.commands.send_msg(contact.public_key, message)
+        result = await meshcore.commands.send_msg(destination, message)
         logger.debug(f"send message {result}")
         state.mark_message_id(message_id)
 

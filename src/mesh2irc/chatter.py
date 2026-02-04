@@ -4,20 +4,16 @@ from typing import Protocol, Union
 
 from meshcore.events import Event
 
-from mesh2irc.common import ContactName, ChannelName, Message, MessageId, Contact
+from mesh2irc.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
 
 Destination = Union[ContactName, ChannelName]
-DirectCallback = Callable[[Contact, Message, MessageId], Awaitable[None]]
+DirectCallback = Callable[[PublicKey, Message, MessageId], Awaitable[None]]
 ChannelCallback = Callable[[ChannelName, Message, MessageId], Awaitable[None]]
 
 
 class Chatter(Protocol):
 
     async def update_contact(self, contact: Contact) -> None: ...
-
-    # async def send_message(
-    #     self, source: ContactName, message: Message, event: Event, *, channel_name: Optional[ChannelName] = None
-    # ) -> None: ...
 
     async def send_direct(self, source: Contact, message: Message, event: Event) -> None: ...
 

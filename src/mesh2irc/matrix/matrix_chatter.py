@@ -49,12 +49,21 @@ class MatrixChatter:
             raise Exception(f"Login failed: {resp}")
 
     async def update_contact(self, contact: Contact):
-        logger.debug(f"Updating contact: {contact}")
+        logging.error(f"Updating contact: {contact}")
         user_id = UserId.create_from_contact(contact, self.config.domain)
-        self.contacts[user_id] = contact
-        await self.create_user(
-            SecretText(self.admin_client.access_token), user_id, contact.name, self.config.user_password
-        )
+        existing = self.contacts.get(user_id, None)
+        if contact != existing:
+            self.contacts[user_id] = contact
+            if self.config.trusted_suffix is None:
+                trusted_display_name = contact.name
+            else:
+                trusted_display_name = ContactName(f"{contact.name} {self.config.trusted_suffix}")
+            await self.create_user(
+                SecretText(self.admin_client.access_token),
+                user_id,
+                trusted_display_name,
+                self.config.user_password,
+            )
 
     async def add_direct_callback(self, cb: DirectCallback):
         self.direct_callbacks.add(cb)
@@ -81,12 +90,10 @@ class MatrixChatter:
                     if member_user_id == self.admin_user_id:
                         logger.debug("FOUND ADMIN")
                     else:
-                        user_contact = self.contacts.get(member_user_id, None)
-                        if user_contact is None:
-                            logging.warning(f"No contact found for {member_user_id}")
-                            return
                         for cb in self.direct_callbacks:
-                            await cb(user_contact, message, message_id)
+                            public_key = member_user_id.public_key
+                            assert public_key is not None
+                            await cb(public_key, message, message_id)
                 pass
             else:
                 room_name = room.name
@@ -101,9 +108,7 @@ class MatrixChatter:
             is_direct: bool = room_member_ev.content.get("is_direct", False)
             if not is_direct:
                 return
-            displayname: str = room_member_ev.content["displayname"]
-            user_name = ContactName(displayname)
-            user_id = UserId.create_from_contact_name(user_name, self.config.domain)
+            user_id = UserId.parse_user_id(room_member_ev.state_key)
             client = await self.get_client(user_id, self.config.user_password)
             resp = await client.join(room.room_id)
             if isinstance(resp, JoinError):
@@ -197,7 +202,7 @@ class MatrixChatter:
         resp = await client.login(user_password.raw)
         if isinstance(resp, LoginError):
             await client.close()
-            raise Exception(f"Login failed: {resp}")
+            raise Exception(f"Login failed: {resp} {user_id}")
         return client
 
     async def get_client(self, user_id: UserId, password: SecretText) -> AsyncClient:

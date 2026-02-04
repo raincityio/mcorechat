@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import dataclasses
-from typing import Any
+from typing import Any, Optional
 
 from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName
 
@@ -12,6 +12,7 @@ class Config:
     admin_password: SecretText
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
+    trusted_suffix: Optional[str] = "[trusted]"
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
