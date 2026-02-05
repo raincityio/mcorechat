@@ -9,6 +9,9 @@ from mesh2irc.common import ContactName, Contact, PublicKey
 UserName = NewType("UserName", str)
 DomainName = NewType("DomainName", str)
 HomeserverURL = NewType("HomeserverURL", str)
+RoomId = NewType("RoomId", str)
+RoomName = NewType("RoomName", str)
+RoomAlias = NewType("RoomAlias", str)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,4 +64,4 @@ class UserId:
         #     raise Exception(f"Unknown contact type: {raw}")
 
 
-__all__ = ["DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
+__all__ = ["RoomId", "DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
