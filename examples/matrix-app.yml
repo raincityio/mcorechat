@@ -1,0 +1,22 @@
+id: example_as
+url: http://neptune.elisha.raincity.io:9000
+as_token: "AS_SUPER_SECRET_TOKEN"
+hs_token: "HS_SUPER_SECRET_TOKEN"
+
+sender_localpart: examplebot
+
+namespaces:
+  users: 
+    - exclusive: true
+      regex: "@.*:example.com"
+#    - exclusive: true
+#      regex: "@?_*:example.com"
+
+  rooms: 
+    - exclusive: true
+      regex: ".*"
+
+  aliases:
+    - exclusive: true
+      regex: ".*"
+

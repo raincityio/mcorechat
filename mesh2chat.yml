@@ -1,0 +1,10 @@
+meshcore:
+  driver: tcp
+  tcp_endpoint: [localhost, 1234]
+matrix:
+  domain: example.com
+  admin_user: drew
+  admin_password: usgp3140
+logging_config_path: /Users/dgochena/mesh2irc/mesh2chat_logging.yml
+#no_send: true
+seed_contacts: false

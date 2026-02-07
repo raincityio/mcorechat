@@ -122,20 +122,26 @@ class MatrixChatter:
         source_user_id = UserId.create_from_contact(source, self.config.domain)
         # TODO may need to create a user
         source_client = await self.get_client(source_user_id, self.config.user_password)
+        await source_client.sync(full_state=True)
+        # TODO may need to create a room
+        # TODO when i leave a room and reenter, then i have bad client state
+        found_rooms = list[MatrixRoom]()
         for room in source_client.rooms.values():
             if not room.is_group:
                 continue
             if room.group_name() == str(self.admin_user_id.name):
-                break
-        else:
+                found_rooms.append(room)
+        if len(found_rooms) == 0:
             raise Exception(f"Source not found: {source}")
-        resp = await source_client.room_send(
-            room_id=room.room_id,
-            message_type="m.room.message",
-            content={"msgtype": "m.text", "body": message, "meshcore_event": json.dumps(event, cls=JSONEncoder)},
-        )
-        if isinstance(resp, RoomSendError):
-            raise Exception(str(resp.status_code))
+        for room in found_rooms:
+            logger.error(f"Room: {room.name}")
+            resp = await source_client.room_send(
+                room_id=room.room_id,
+                message_type="m.room.message",
+                content={"msgtype": "m.text", "body": message, "meshcore_event": json.dumps(event, cls=JSONEncoder)},
+            )
+            if isinstance(resp, RoomSendError):
+                raise Exception(str(resp.status_code))
 
     async def send_channel(
         self, source: ContactName, message: Message, event: Event, channel_name: ChannelName

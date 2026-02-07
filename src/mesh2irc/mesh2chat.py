@@ -27,6 +27,7 @@ from mesh2irc.common import (
 )
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.json_state import JsonState
+from mesh2irc.matrix.app import MatrixASChatter
 from mesh2irc.matrix.matrix_chatter import MatrixChatter
 
 logger = logging.getLogger(__name__)
@@ -212,6 +213,7 @@ async def amain():
 
     meshcore = await get_meshcore(config.meshcore, main_task)
     chatter = MatrixChatter(config.matrix)
+    chatter = MatrixASChatter(config.matrix)
     await chatter.init()
     state = JsonState(config.json_state)
     state.load()
@@ -224,34 +226,52 @@ async def amain():
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise Exception(f"Unknown channel: {channel_name}")
-        result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
-            channel.idx, message
-        )
-        logger.debug(f"send message {result}")
-        state.mark_message_id(message_id)
+        if False:
+            result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
+                channel.idx, message
+            )
+            logger.debug(f"send message {result}")
+            state.mark_message_id(message_id)
+        else:
+            logger.debug(f"send message {message_id}")
+            raise Exception("FIIO")
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
             return
-        result = await meshcore.commands.send_msg(destination, message)
-        logger.debug(f"send message {result}")
-        state.mark_message_id(message_id)
+        if False:
+            result = await meshcore.commands.send_msg(destination, message)
+            logger.debug(f"send message {result}")
+            state.mark_message_id(message_id)
 
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
+
+    # async def update_contacts():
+    #     q = asyncio.Queue[Contact]()
+    #     s = asyncio.Semaphore(0)
+    #
+    #     async def worker():
+    #         while True:
+    #             _contact, _future = await q.get()
+    #             await chatter.update_contact(_contact)
+    #             _future.set_result(None)
+    #
+    #     async with TaskGroup() as g:
+    #         for i in range(10):
+    #             g.create_task(worker())
+    #         async for contact in mcp.list_contacts():
+    #             q.put_nowait(contact)
+
+    if config.seed_contacts:
+        async for contact in mcp.list_contacts():
+            await chatter.update_contact(contact)
 
     try:
         async with TaskGroup() as g:
             g.create_task(chatter.run())
             g.create_task(main_loop(mcp, chatter))
-
-            async def seed_contacts():
-                async for contact in mcp.list_contacts():
-                    await chatter.update_contact(contact)
-
-            if config.seed_contacts:
-                g.create_task(seed_contacts())
 
             async def commiter():
                 while True:
