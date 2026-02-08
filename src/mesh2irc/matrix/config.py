@@ -2,6 +2,7 @@
 import dataclasses
 from typing import Any, Optional
 
+from mesh2irc.common import ChannelName
 from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName
 
 
@@ -16,7 +17,9 @@ class Config:
     app_prefix: str
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
-    trusted_suffix: Optional[str] = "[trusted]"
+    trusted_suffix: Optional[str] = "[trusted] "
+    enabled_discovery_room: bool = True
+    discovery_room_name: ChannelName = ChannelName("[discovery]")
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
@@ -37,6 +40,8 @@ class Config:
             kwargs["app_as_token"] = SecretText(data["app_as_token"])
         if "app_hs_token" in data:
             kwargs["app_hs_token"] = SecretText(data["app_hs_token"])
+        if "discovery_room_name" in data:
+            kwargs["discovery_room_name"] = ChannelName(data["discovery_room_name"])
         return Config(**kwargs)
 
 

@@ -90,7 +90,7 @@ class MeshCorePlus:
             found = next(filter(lambda x: x.name == name, self.channels), None)
             if found is not None:
                 return found
-            for i in range(0xFF):
+            for i in range(40):
                 channel = await get_channel_by_idx(i)
                 if (channel is not None) and (channel.name == name):
                     return channel
@@ -254,31 +254,32 @@ async def amain():
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
 
-    # async def update_contacts():
-    #     q = asyncio.Queue[Contact]()
-    #     s = asyncio.Semaphore(0)
-    #
-    #     async def worker():
-    #         while True:
-    #             _contact, _future = await q.get()
-    #             await chatter.update_contact(_contact)
-    #             _future.set_result(None)
-    #
-    #     async with TaskGroup() as g:
-    #         for i in range(10):
-    #             g.create_task(worker())
-    #         async for contact in mcp.list_contacts():
-    #             q.put_nowait(contact)
+    async def seed_contacts():
+        async with TaskGroup() as g:
+            s = asyncio.Semaphore(8)
+            async for contact in mcp.list_contacts():
 
-    if config.seed_contacts:
-        async for contact in mcp.list_contacts():
-            await chatter.update_contact(contact)
+                async def _update_contact(_contact: Contact):
+                    async with s:
+                        await chatter.update_contact(_contact)
 
-    async for channel in mcp.iter_channels():
-        await chatter.update_channel(channel.name)
+                g.create_task(_update_contact(_contact=contact))
+
+    # await seed_contacts()
+
+    async def seed_channels():
+        async with TaskGroup() as g:
+            async for channel in mcp.iter_channels():
+                g.create_task(chatter.update_channel(channel.name))
+
+    # await seed_channels()
 
     try:
         async with TaskGroup() as g:
+            if config.seed_contacts:
+                g.create_task(seed_contacts())
+            if config.seed_channels:
+                g.create_task(seed_channels())
             g.create_task(chatter.run())
             g.create_task(main_loop(mcp, chatter))
 

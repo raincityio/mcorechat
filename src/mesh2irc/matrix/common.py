@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import dataclasses
+import enum
 import hashlib
 from typing import Any, NewType, Optional
 
@@ -11,6 +12,7 @@ DomainName = NewType("DomainName", str)
 HomeserverURL = NewType("HomeserverURL", str)
 RoomId = NewType("RoomId", str)
 MatrixSpace = NewType("MatrixSpace", str)
+type MatrixEvent = dict[str, Any]
 
 
 def shallow_copy(obj: Any) -> Any:
@@ -99,10 +101,17 @@ def parse_user_id(app_prefix: str, raw: str):
         return UserId(UserName(raw_user), DomainName(raw_domain))
 
 
+class RoomMembership(enum.Enum):
+    INVITE = "invite"
+    JOIN = "join"
+    LEAVE = "leave"
+
+
 @dataclasses.dataclass(frozen=True)
 class RoomMember:
     user_id: UserId
     is_direct: bool
+    membership: RoomMembership
 
 
 @dataclasses.dataclass(frozen=True)
@@ -119,4 +128,4 @@ class ChannelRoom:
         return ChannelRoom(**(self.to_data() | kwargs))
 
 
-__all__ = ["RoomId", "DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
+__all__ = ["RoomAlias", "parse_room_alias", "RoomId", "DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]
