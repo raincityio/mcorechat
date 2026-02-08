@@ -238,7 +238,7 @@ async def amain():
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
         else:
-            logger.debug(f"send message {message_id}")
+            logger.debug(f"!send message {message} {message_id}")
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
@@ -249,7 +249,7 @@ async def amain():
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
         else:
-            logger.debug(f"send message {message_id}")
+            logger.debug(f"!send message {message} {message_id}")
 
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
@@ -276,7 +276,6 @@ async def amain():
 
     async for channel in mcp.iter_channels():
         await chatter.update_channel(channel.name)
-        break
 
     try:
         async with TaskGroup() as g:

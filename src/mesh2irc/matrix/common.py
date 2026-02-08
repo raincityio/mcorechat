@@ -110,7 +110,7 @@ class ChannelRoom:
     room_id: RoomId
     name: Optional[ChannelName] = None
     members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
-    aliases: set[RoomAlias] = dataclasses.field(default_factory=set[RoomAlias])
+    alias: Optional[RoomAlias] = None
 
     def to_data(self):
         return shallow_copy(self)
