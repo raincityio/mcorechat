@@ -61,6 +61,13 @@ class MeshCorePlus:
         self.cached_contacts: Optional[set[Contact]] = None
         self.channels = set[Channel]()
 
+    async def iter_channels(self):
+        for i in range(40):
+            channel = await self.get_channel(idx=i)
+            if channel is None:
+                continue
+            yield channel
+
     async def get_channel(self, *, idx: Optional[int] = None, name: Optional[ChannelName] = None):
 
         async def get_channel_by_idx(_idx: int):
@@ -69,12 +76,10 @@ class MeshCorePlus:
                 return _found
             _channel = await self.meshcore.commands.get_channel(_idx)
             if _channel.type == EventType.ERROR:
-                raise Exception(f"get_channel({i}) error: {_channel}")
+                raise Exception(f"get_channel({_idx}) error: {_channel}")
             _channel_name_raw = _channel.payload["channel_name"]
             if _channel_name_raw == "":
                 return None
-            if _channel_name_raw == "Public":
-                _channel_name_raw = "public"  # TODO this is lame
             _channel = Channel(ChannelName(_channel_name_raw), _channel.payload["channel_idx"])
             self.channels.add(_channel)
             return _channel
@@ -226,7 +231,7 @@ async def amain():
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise Exception(f"Unknown channel: {channel_name}")
-        if False:
+        if config.enable_send:
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
                 channel.idx, message
             )
@@ -234,16 +239,17 @@ async def amain():
             state.mark_message_id(message_id)
         else:
             logger.debug(f"send message {message_id}")
-            raise Exception("FIIO")
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
             return
-        if False:
+        if config.enable_send:
             result = await meshcore.commands.send_msg(destination, message)
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
+        else:
+            logger.debug(f"send message {message_id}")
 
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
@@ -267,6 +273,10 @@ async def amain():
     if config.seed_contacts:
         async for contact in mcp.list_contacts():
             await chatter.update_contact(contact)
+
+    async for channel in mcp.iter_channels():
+        await chatter.update_channel(channel.name)
+        break
 
     try:
         async with TaskGroup() as g:

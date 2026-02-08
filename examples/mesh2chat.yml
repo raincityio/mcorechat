@@ -1,0 +1,17 @@
+meshcore:
+  driver: tcp
+  tcp_endpoint: [ koopa.elisha.raincity.io, 1234 ]
+matrix:
+  homeserver: "http://polaris.elisha.raincity.io:8008"
+  domain: example.com
+  admin_user: drew
+  admin_password: usgp3140
+
+  app_user: examplebot
+  app_as_token: AS_SUPER_SECRET_TOKEN
+  app_hs_token: HS_SUPER_SECRET_TOKEN
+  app_prefix: mesh_.
+
+logging_config_path: ~/PycharmProjects/mesh2irc/examples/mesh2chat_logging.yml
+seed_contacts: false
+enable_send: false

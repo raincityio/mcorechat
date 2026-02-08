@@ -2,16 +2,19 @@
 
 import dataclasses
 import hashlib
-from typing import NewType, Optional
+from typing import Any, NewType, Optional
 
-from mesh2irc.common import ContactName, Contact, PublicKey
+from mesh2irc.common import ContactName, Contact, PublicKey, ChannelName
 
 UserName = NewType("UserName", str)
 DomainName = NewType("DomainName", str)
 HomeserverURL = NewType("HomeserverURL", str)
 RoomId = NewType("RoomId", str)
-RoomName = NewType("RoomName", str)
-RoomAlias = NewType("RoomAlias", str)
+MatrixSpace = NewType("MatrixSpace", str)
+
+
+def shallow_copy(obj: Any) -> Any:
+    return {field.name: getattr(obj, field.name) for field in dataclasses.fields(obj)}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,6 +35,28 @@ def sha256(text: str) -> str:
 
 
 @dataclasses.dataclass(frozen=True)
+class RoomAlias:
+    name: ChannelName
+    domain: DomainName
+
+    def __str__(self):
+        return f"#{self.name}:{self.domain}"
+
+    @staticmethod
+    def from_name(name: ChannelName, domain: DomainName, *, prefix: Optional[str] = None):
+        if prefix is None:
+            return RoomAlias(name, domain)
+        name = ChannelName(f"{prefix}{name}")
+        return RoomAlias(name, domain)
+
+
+def parse_room_alias(raw: str):
+    assert raw.startswith("#")
+    raw_name, raw_domain = raw[1:].split(":", 1)
+    return RoomAlias(ChannelName(raw_name), DomainName(raw_domain))
+
+
+@dataclasses.dataclass(frozen=True)
 class UserId:
     name: UserName
     domain: DomainName
@@ -41,27 +66,57 @@ class UserId:
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_from_contact(contact: Contact, domain: DomainName):
-        user_name = UserName(f"t_{str(contact.public_key)}")
+    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: Optional[str] = None):
+        if prefix is None:
+            user_name = UserName(f"t_{str(contact.public_key)}")
+        else:
+            user_name = UserName(f"{prefix}t_{str(contact.public_key)}")
         return UserId(user_name, DomainName(domain), contact.public_key)
 
     @staticmethod
-    def create_from_contact_name(contact_name: ContactName, domain: DomainName):
-        user_name = UserName(f"u_{sha256(contact_name.raw)}")
+    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: Optional[str] = None):
+        if prefix is None:
+            user_name = UserName(f"u_{sha256(contact_name.raw)}")
+        else:
+            user_name = UserName(f"{prefix}u_{sha256(contact_name.raw)}")
         return UserId(user_name, DomainName(domain))
 
-    @staticmethod
-    def parse_user_id(raw: str):
-        assert raw.startswith("@")
-        user_raw, domain_raw = raw[1:].split(":", 1)
-        if user_raw.startswith("t_"):
-            public_key = PublicKey(user_raw[2:])
-            return UserId(UserName(user_raw), DomainName(domain_raw), public_key)
-        # elif user_raw.startswith("u_"):
-        else:  # FIXME
-            return UserId(UserName(user_raw), DomainName(domain_raw))
-        # else:
-        #     raise Exception(f"Unknown contact type: {raw}")
+
+def parse_user_id(app_prefix: str, raw: str):
+    mesh_user_id_start = f"@{app_prefix}"
+    if raw.startswith(mesh_user_id_start):
+        prefixed_raw_user, raw_domain = raw[1:].split(":", 1)
+        raw_user = prefixed_raw_user[len(app_prefix) :]
+        if raw_user.startswith("t_"):
+            public_key = PublicKey(raw_user[2:])
+            return UserId(UserName(prefixed_raw_user), DomainName(raw_domain), public_key)
+        elif raw_user.startswith("u_"):
+            return UserId(UserName(prefixed_raw_user), DomainName(raw_domain), None)
+        else:
+            raise Exception(f"Invalid mesh user ID: {raw_user}")
+    else:
+        raw_user, raw_domain = raw[1:].split(":", 1)
+        return UserId(UserName(raw_user), DomainName(raw_domain))
+
+
+@dataclasses.dataclass(frozen=True)
+class RoomMember:
+    user_id: UserId
+    is_direct: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class ChannelRoom:
+    room_id: RoomId
+    name: Optional[ChannelName] = None
+    members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
+    aliases: set[RoomAlias] = dataclasses.field(default_factory=set[RoomAlias])
+
+    def to_data(self):
+        return shallow_copy(self)
+
+    def copy(self, **kwargs: Any):
+        return ChannelRoom(**(self.to_data() | kwargs))
 
 
 __all__ = ["RoomId", "DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]

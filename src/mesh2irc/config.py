@@ -50,6 +50,7 @@ class Config:
     logging_config_path: Path = default_logging_config_path
     json_state: JsonStateConfig = JsonStateConfig()
     seed_contacts: bool = True
+    enable_send: bool = True
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
