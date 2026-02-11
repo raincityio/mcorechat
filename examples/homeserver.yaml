@@ -41,6 +41,9 @@ trusted_key_servers:
 public_room_search_enabled: true
 public_room_list_enabled: true
 enable_room_list_search: true
+allow_public_rooms_without_auth: true
+room_list_publication_rules:
+  - action: "allow"
 
 user_directory:
   enabled: true
@@ -73,6 +76,14 @@ app_service_config_files:
 #rc_registration:
 #  per_second: 0
 #  burst_count: 0
+loggers:
+  synapse.api.ratelimiting:
+    level: DEBUG
+ratelimit:
+  enabled: false
+rc_joins_per_room:
+  per_second: 100
+  burst_count: 200
 rc_login:
   address:
     per_second: 100
@@ -80,6 +91,13 @@ rc_login:
   account:
     per_second: 100
     burst_count: 200
+rc_joins:
+  local:
+    per_second: 1000
+    burst_count: 2000
+  remote:
+    per_second: 1000
+    burst_count: 2000
 rc_invites:
   per_room:
     per_second: 100
@@ -98,4 +116,3 @@ rc_room_creation:
   burst_count: 200
 #
 ## vim:ft=yaml
-

@@ -23,13 +23,11 @@ handlers:
 
 root:
   level: DEBUG
-  handlers: [ console ]
+  handlers: [console]
 
 loggers:
   mesh2irc:
     level: DEBUG
-#  mesh2irc.matrix:
-#    level: DEBUG
 #  nio:
 #    level: WARNING
 

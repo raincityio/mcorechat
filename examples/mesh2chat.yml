@@ -5,7 +5,7 @@ matrix:
   homeserver: "http://polaris.elisha.raincity.io:8008"
   domain: example.com
   admin_user: drew
-  admin_password: usgp3140
+  admin_password: password
 
   app_user: examplebot
   app_as_token: AS_SUPER_SECRET_TOKEN
