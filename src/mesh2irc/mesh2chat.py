@@ -47,11 +47,13 @@ async def get_meshcore(config: MeshCoreConfig, task: Task[Any]):
     else:
         raise Exception(f"Unknown driver: {config.driver}")
 
-    # async def disconnect_cb(_event: Event):
-    #     logger.info(f"Serial Disconnected: {_event}")
-    #     task.cancel()
-    #
-    # meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
+    # TODO I disabled this because I enabled auto_reconnect above, but for some reason the flow never kicks in again
+    # so i am enabling again until i figure that out.
+    async def disconnect_cb(_event: Event):
+        logger.info(f"Serial Disconnected: {_event}")
+        task.cancel()
+
+    meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
 
     return meshcore
 
