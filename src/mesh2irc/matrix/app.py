@@ -125,7 +125,7 @@ class MatrixASChatter:
         await self.ensure_room(channel_name, room_alias)
 
     async def send_direct(self, source: Contact, message: Message, event: Event) -> None:
-        raise Exception()
+        logger.error(f"Direct not supported yet!")
 
     async def ensure_room(self, room_name: ChannelName, room_alias: RoomAlias):
         room = next(filter(lambda x: room_alias == x.alias, self.room_cache.values()), None)
@@ -253,7 +253,7 @@ class MatrixASChatter:
             if member.user_id != self.admin_user:
                 await self.client.join_room(room_id, as_user_id=member.user_id)
 
-    def is_direct(self, room: ChannelRoom) -> bool:
+    def is_direct(self, room: ChannelRoom):
         if room.name is not None:
             return False
         for member in room.members.values():
@@ -272,12 +272,7 @@ class MatrixASChatter:
         room = await self.get_room(room_id)
         message = Message(event["content"]["body"])
         if room.name is None:
-            for member in room.members.values():
-                if member.user_id != self.admin_user:
-                    if member.user_id.public_key is not None:
-                        for cb in self.direct_callbacks:
-                            await cb(member.user_id.public_key, message, event_id)
-            raise Exception()
+            logger.error("DIRECT NOT SUPPORTED YET")
         else:
             for cb in self.channel_callbacks:
                 await cb(room.name, message, event_id)

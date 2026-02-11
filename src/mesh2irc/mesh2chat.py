@@ -28,6 +28,7 @@ from mesh2irc.common import (
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.json_state import JsonState
 from mesh2irc.matrix.app import MatrixASChatter
+from mesh2irc.matrix.config import MatrixBackend
 from mesh2irc.matrix.matrix_chatter import MatrixChatter
 
 logger = logging.getLogger(__name__)
@@ -37,20 +38,20 @@ async def get_meshcore(config: MeshCoreConfig, task: Task[Any]):
     if config.driver == MeshCoreDriver.SERIAL:
         assert config.serial_device_path is not None
         meshcore = await MeshCore.create_serial(  # pyright: ignore [reportUnknownMemberType]
-            str(config.serial_device_path)
+            str(config.serial_device_path), auto_reconnect=True
         )
     elif config.driver == MeshCoreDriver.TCP:
         meshcore = await MeshCore.create_tcp(  # pyright: ignore [reportUnknownMemberType]
-            config.tcp_endpoint[0], config.tcp_endpoint[1]
+            config.tcp_endpoint[0], config.tcp_endpoint[1], auto_reconnect=True
         )
     else:
         raise Exception(f"Unknown driver: {config.driver}")
 
-    async def disconnect_cb(_event: Event):
-        logger.info(f"Serial Disconnected: {_event}")
-        task.cancel()
-
-    meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
+    # async def disconnect_cb(_event: Event):
+    #     logger.info(f"Serial Disconnected: {_event}")
+    #     task.cancel()
+    #
+    # meshcore.subscribe(EventType.DISCONNECTED, disconnect_cb)
 
     return meshcore
 
@@ -217,9 +218,15 @@ async def amain():
     logger.debug(f"Config: {config}")
 
     meshcore = await get_meshcore(config.meshcore, main_task)
-    chatter = MatrixChatter(config.matrix)
-    chatter = MatrixASChatter(config.matrix)
-    await chatter.init()
+    chatter: Chatter
+    if config.matrix.backend == MatrixBackend.POC:
+        m_chatter = MatrixChatter(config.matrix)
+        chatter = m_chatter
+        await m_chatter.init()
+    else:
+        as_chatter = MatrixASChatter(config.matrix)
+        chatter = as_chatter
+        await as_chatter.init()
     state = JsonState(config.json_state)
     state.load()
     mcp = MeshCorePlus(meshcore)

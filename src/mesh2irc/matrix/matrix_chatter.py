@@ -26,7 +26,7 @@ from nio.client import AsyncClient
 
 from mesh2irc.chatter import ChannelCallback, DirectCallback
 from mesh2irc.common import JSONEncoder, Message, MessageId, ChannelName, ContactName, Contact
-from mesh2irc.matrix.common import UserId, SecretText
+from mesh2irc.matrix.common import UserId, SecretText, parse_user_id
 from mesh2irc.matrix.config import Config
 
 logger = logging.getLogger(__name__)
@@ -66,10 +66,13 @@ class MatrixChatter:
     async def add_channel_callback(self, cb: ChannelCallback) -> None:
         self.channel_callbacks.add(cb)
 
+    async def update_channel(self, channel_name: ChannelName) -> None:
+        pass
+
     async def run(self):
 
         async def room_message_cb(room: MatrixRoom, event: nio.rooms.Event):
-            source = UserId.parse_user_id(event.sender)
+            source = parse_user_id(self.config.app_prefix, event.sender)
             if source != self.admin_user_id:
                 return
             message = Message(event.source["content"]["body"])
@@ -80,7 +83,7 @@ class MatrixChatter:
                 if type(resp) is JoinedMembersError:
                     raise Exception(str(resp.status_code))
                 for member in cast(JoinedMembersResponse, resp).members:
-                    member_user_id = UserId.parse_user_id(member.user_id)
+                    member_user_id = parse_user_id(self.config.app_prefix, member.user_id)
                     if member_user_id != self.admin_user_id:
                         for cb in self.direct_callbacks:
                             public_key = member_user_id.public_key
@@ -101,7 +104,7 @@ class MatrixChatter:
             is_direct: bool = room_member_ev.content.get("is_direct", False)
             if not is_direct:
                 return
-            user_id = UserId.parse_user_id(room_member_ev.state_key)
+            user_id = parse_user_id(self.config.app_prefix, room_member_ev.state_key)
             client = await self.get_client(user_id, self.config.user_password)
             resp = await client.join(room.room_id)
             if isinstance(resp, JoinError):
