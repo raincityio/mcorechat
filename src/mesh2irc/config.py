@@ -67,6 +67,3 @@ class Config:
         if "meshcore" in data:
             kwargs["meshcore"] = MeshCoreConfig.from_data(data["meshcore"])
         return Config(**kwargs)
-
-
-__all__ = ["MeshCoreConfig", "MeshCoreDriver", "default_config_path", "Config"]

@@ -25,7 +25,7 @@ class Config:
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
     trusted_suffix: Optional[str] = "[trusted] "
-    enabled_discovery_room: bool = True
+    enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
 
     @staticmethod
@@ -52,6 +52,3 @@ class Config:
         if "backend" in data:
             kwargs["backend"] = MatrixBackend(data["backend"])
         return Config(**kwargs)
-
-
-__all__ = ["Config"]

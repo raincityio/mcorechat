@@ -11,7 +11,7 @@ UserName = NewType("UserName", str)
 DomainName = NewType("DomainName", str)
 HomeserverURL = NewType("HomeserverURL", str)
 RoomId = NewType("RoomId", str)
-MatrixSpace = NewType("MatrixSpace", str)
+DisplayName = NewType("DisplayName", str)
 type MatrixEvent = dict[str, Any]
 
 
@@ -112,6 +112,7 @@ class RoomMember:
     user_id: UserId
     is_direct: bool
     membership: RoomMembership
+    display_name: Optional[DisplayName]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,6 +127,3 @@ class ChannelRoom:
 
     def copy(self, **kwargs: Any):
         return ChannelRoom(**(self.to_data() | kwargs))
-
-
-__all__ = ["RoomAlias", "parse_room_alias", "RoomId", "DomainName", "HomeserverURL", "SecretText", "sha256", "UserId"]

@@ -6,8 +6,8 @@ from urllib.parse import quote
 import aiohttp
 from aiohttp.web_exceptions import HTTPBadRequest, HTTPUnauthorized, HTTPNotFound
 
-from mesh2irc.common import ContactName, ChannelName
-from mesh2irc.matrix.common import SecretText, UserId, RoomId, RoomAlias, parse_room_alias
+from mesh2irc.common import ChannelName
+from mesh2irc.matrix.common import SecretText, UserId, RoomId, RoomAlias, parse_room_alias, DisplayName
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class MatrixClient:
         }
         self.session = aiohttp.ClientSession(headers=headers)
 
-    async def set_display_name(self, user_id: UserId, display_name: ContactName) -> None:
+    async def set_display_name(self, user_id: UserId, display_name: DisplayName) -> None:
         payload = {
             "displayname": str(display_name),
         }
@@ -166,6 +166,3 @@ class MatrixClient:
                 raise Exception(f"{resp.status} {text}")
             data = await resp.json()
             return data
-
-
-__all__ = ["MatrixClient"]

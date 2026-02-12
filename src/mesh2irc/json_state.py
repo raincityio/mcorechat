@@ -60,6 +60,3 @@ class JsonState:
             state_data = {}
         for message_id in [MessageId(e) for e in state_data.get("marked_message_ids", [])]:
             self.mark_message_id(message_id)
-
-
-__all__ = ["Config", "JsonState"]

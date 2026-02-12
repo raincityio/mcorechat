@@ -64,16 +64,3 @@ class JSONEncoder(json.JSONEncoder):
         elif isinstance(o, bytes):
             return o.hex()
         return super().default(o)
-
-
-__all__ = [
-    "Message",
-    "MessageId",
-    "ChannelName",
-    "Channel",
-    "ContactName",
-    "PublicKey",
-    "PublicKeyPrefix",
-    "Contact",
-    "JSONEncoder",
-]

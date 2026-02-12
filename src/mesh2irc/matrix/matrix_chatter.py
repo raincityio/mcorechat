@@ -248,6 +248,3 @@ class MatrixChatter:
                 else:
                     text = await resp.text()
                     raise Exception(f"Failed ({resp.status}): {text} {user_id}")
-
-
-__all__ = ["MatrixChatter"]

@@ -12,6 +12,7 @@ from mesh2irc.chatter import DirectCallback, ChannelCallback
 from mesh2irc.common import ContactName, Message, ChannelName, Contact
 from mesh2irc.matrix import common
 from mesh2irc.matrix.common import (
+    DisplayName,
     MatrixEvent,
     RoomAlias,
     RoomId,
@@ -36,7 +37,7 @@ class MatrixASChatter:
         self.channel_callbacks = list[ChannelCallback]()
         self.room_cache: dict[RoomId, ChannelRoom] = {}
         self.room_cache_lock = asyncio.Lock()
-        self.user_cache: dict[UserId, ContactName] = {}
+        self.user_cache: dict[UserId, DisplayName] = {}
         self.admin_user = UserId(config.admin_user, config.domain)
         self.app_user = UserId(UserName(config.app_user), config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
@@ -59,15 +60,27 @@ class MatrixASChatter:
     def create_room_alias(self, room_name: ChannelName):
         return RoomAlias.from_name(room_name, self.config.domain, prefix=self.config.app_prefix)
 
+    def create_display_name(self, *, contact_name: Optional[ContactName] = None, contact: Optional[Contact] = None):
+        if contact_name is not None:
+            return DisplayName(str(contact_name))
+        elif contact is not None:
+            return DisplayName(f"{self.config.trusted_suffix}{str(contact.name)}")
+        else:
+            raise Exception(f"No contact name or contact provided")
+
     ## Lifecycle
     async def init(self):
         # await self.cleanup()
         # FIXME this doesn't work
-        # await self.client.set_display_name(self.app_user, ContactName("Admin"))
-        if self.config.enabled_discovery_room:
+        # await self.client.set_display_name(self.app_user, ContactName("MeshBot"))
+        if self.config.enable_discovery_room:
             discovery_room_name = self.config.discovery_room_name
             discovery_room_alias = self.create_room_alias(discovery_room_name)
-            self.discovery_room_id = (await self.ensure_room(discovery_room_name, discovery_room_alias)).room_id
+            discovery_room = await self.ensure_room(discovery_room_name, discovery_room_alias)
+            self.discovery_room_id = discovery_room.room_id
+            for member in discovery_room.members.values():
+                display_name = DisplayName(member.user_id.name) if member.display_name is None else member.display_name
+                self.user_cache[member.user_id] = display_name
 
     async def run(self):
         app = web.Application()
@@ -91,21 +104,6 @@ class MatrixASChatter:
         await site.start()
         logger.debug(f"Started server on {9000}")
 
-        # channel_name = ChannelName("Public")
-        # room_alias = self.create_room_alias(room_name=channal_name)
-        # source = ContactName("tesla")
-        # message = Message("meow")
-        # print("Send A")
-        # await self.send_channel(source, message, None, channel_name)
-        # print("Send B")
-        # await self.send_channel(source, message, None, channel_name)
-        # print("Send C")
-        # room_alias = self.create_room_alias(RoomName("barf"))
-        # await self.delete_room_alias(room_alias)
-        # room_id = await self.create_room(room_alias.name, invite=[self.admin_user])
-        # room_id = await self.get_room_id_by_alias(room_alias)
-        # await self.set_visi(room_id)
-
     async def cleanup(self):
         for room_id in await self.client.get_public_rooms():
             for room_alias in await self.client.get_room_aliases(room_id):
@@ -116,7 +114,7 @@ class MatrixASChatter:
     ## Interface
     async def update_contact(self, contact: Contact) -> None:
         user_id = self.create_user_id(contact=contact)
-        await self.ensure_user(user_id, contact.name)
+        await self.ensure_user(user_id, self.create_display_name(contact=contact))
         if self.discovery_room_id is not None:
             await self.ensure_room_join_membership(self.room_cache[self.discovery_room_id], user_id)
 
@@ -137,16 +135,15 @@ class MatrixASChatter:
         room_id = await self.client.create_room(room_name, room_alias, invite=[self.admin_user])
         return await self.get_room(room_id)
 
-    async def ensure_user(self, user_id: UserId, display_name: ContactName) -> None:
-        if user_id.public_key is not None:
-            display_name = ContactName(f"{self.config.trusted_suffix}{display_name}")
+    async def ensure_user(self, user_id: UserId, display_name: DisplayName) -> None:
         test_display_name = self.user_cache.get(user_id, None)
         if test_display_name == display_name:
             return
-        try:
-            await self.client.register_user(user_id)
-        except HTTPBadRequest:
-            pass
+        if test_display_name is None:
+            try:
+                await self.client.register_user(user_id)
+            except HTTPBadRequest:
+                pass
         await self.client.set_display_name(user_id, display_name)
         self.user_cache[user_id] = display_name
 
@@ -169,7 +166,7 @@ class MatrixASChatter:
         room_alias = self.create_room_alias(room_name=channel_name)
         room = await self.ensure_room(channel_name, room_alias)
         source_user_id = self.create_user_id(contact_name=source)
-        await self.ensure_user(source_user_id, source)
+        await self.ensure_user(source_user_id, self.create_display_name(contact_name=source))
         await self.ensure_room_join_membership(room, source_user_id)
         await self.client.send_message(room.room_id, message, as_user_id=source_user_id)
 
@@ -238,7 +235,9 @@ class MatrixASChatter:
         user_id = self.parse_user_id(event["state_key"])
         is_direct = event["content"].get("is_direct", False)
         membership = RoomMembership(event["content"]["membership"])
-        return RoomMember(user_id, is_direct, membership)
+        display_name_raw = event["content"].get("displayname", None)
+        display_name = None if display_name_raw is None else DisplayName(display_name_raw)
+        return RoomMember(user_id, is_direct, membership, display_name)
 
     async def handle_room_member(self, event: MatrixEvent) -> None:
         # m.room.member
