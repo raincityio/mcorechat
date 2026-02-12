@@ -13,6 +13,12 @@ HomeserverURL = NewType("HomeserverURL", str)
 RoomId = NewType("RoomId", str)
 DisplayName = NewType("DisplayName", str)
 type MatrixEvent = dict[str, Any]
+AppPrefix = NewType("AppPrefix", str)
+
+
+class RoomVisibility(enum.Enum):
+    PUBLIC = "public"
+    PRIVATE = "private"
 
 
 def shallow_copy(obj: Any) -> Any:
@@ -21,7 +27,7 @@ def shallow_copy(obj: Any) -> Any:
 
 @dataclasses.dataclass(frozen=True)
 class SecretText:
-    raw: str
+    value: str
 
     def __str__(self):
         return "********"
@@ -45,7 +51,7 @@ class RoomAlias:
         return f"#{self.name}:{self.domain}"
 
     @staticmethod
-    def from_name(name: ChannelName, domain: DomainName, *, prefix: Optional[str] = None):
+    def from_name(name: ChannelName, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
         if prefix is None:
             return RoomAlias(name, domain)
         name = ChannelName(f"{prefix}{name}")
@@ -68,7 +74,7 @@ class UserId:
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: Optional[str] = None):
+    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
         if prefix is None:
             user_name = UserName(f"t_{str(contact.public_key)}")
         else:
@@ -76,15 +82,15 @@ class UserId:
         return UserId(user_name, DomainName(domain), contact.public_key)
 
     @staticmethod
-    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: Optional[str] = None):
+    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
         if prefix is None:
-            user_name = UserName(f"u_{sha256(contact_name.raw)}")
+            user_name = UserName(f"u_{sha256(str(contact_name))}")
         else:
-            user_name = UserName(f"{prefix}u_{sha256(contact_name.raw)}")
+            user_name = UserName(f"{prefix}u_{sha256(str(contact_name))}")
         return UserId(user_name, DomainName(domain))
 
 
-def parse_user_id(app_prefix: str, raw: str):
+def parse_user_id(app_prefix: AppPrefix, raw: str):
     mesh_user_id_start = f"@{app_prefix}"
     if raw.startswith(mesh_user_id_start):
         prefixed_raw_user, raw_domain = raw[1:].split(":", 1)

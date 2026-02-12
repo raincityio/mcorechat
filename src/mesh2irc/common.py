@@ -7,41 +7,16 @@ from meshcore.events import Event, EventType
 
 Message = NewType("Message", str)
 MessageId = NewType("MessageId", str)
-# ChannelName = NewType("ChannelName", str)
-# UserName = NewType("UserName", str)
-
-
-# @dataclasses.dataclass(frozen=True)
-# class Message:
-#     content: str
-#     id: str
-
-
-@dataclasses.dataclass(frozen=True)
-class ChannelName:
-    raw: str
-
-    def __str__(self) -> str:
-        return self.raw
-
-
-@dataclasses.dataclass(frozen=True)
-class ContactName:
-    raw: str
-
-    def __str__(self) -> str:
-        return self.raw
+ChannelName = NewType("ChannelName", str)
+ContactName = NewType("ContactName", str)
+PublicKey = NewType("PublicKey", str)
+PublicKeyPrefix = NewType("PublicKeyPrefix", str)
 
 
 @dataclasses.dataclass(frozen=True)
 class Channel:
     name: ChannelName
     idx: int
-
-
-# ContactName = NewType("ContactName", str)
-PublicKey = NewType("PublicKey", str)
-PublicKeyPrefix = NewType("PublicKeyPrefix", str)
 
 
 @dataclasses.dataclass(frozen=True)

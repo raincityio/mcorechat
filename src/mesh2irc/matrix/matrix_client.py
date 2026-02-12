@@ -6,19 +6,28 @@ from urllib.parse import quote
 import aiohttp
 from aiohttp.web_exceptions import HTTPBadRequest, HTTPUnauthorized, HTTPNotFound
 
-from mesh2irc.common import ChannelName
-from mesh2irc.matrix.common import SecretText, UserId, RoomId, RoomAlias, parse_room_alias, DisplayName
+from mesh2irc.common import ChannelName, Message
+from mesh2irc.matrix.common import (
+    HomeserverURL,
+    SecretText,
+    UserId,
+    RoomId,
+    RoomAlias,
+    parse_room_alias,
+    DisplayName,
+    RoomVisibility,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MatrixClient:
 
-    def __init__(self, homeserver: str, token: SecretText):
+    def __init__(self, homeserver: HomeserverURL, token: SecretText):
         self.homeserver = homeserver
         self.token = token
         headers = {
-            "Authorization": f"Bearer {self.token.raw}",
+            "Authorization": f"Bearer {self.token.value}",
             "Content-Type": "application/json",
         }
         self.session = aiohttp.ClientSession(headers=headers)
@@ -45,9 +54,9 @@ class MatrixClient:
         data = await self._get(["rooms", str(room_id), "aliases"], as_user_id=as_user_id)
         return [parse_room_alias(e) for e in data["aliases"]]
 
-    async def set_room_visibility(self, room_id: RoomId, visibility: str):
+    async def set_room_visibility(self, room_id: RoomId, visibility: RoomVisibility):
         payload = {
-            "visibility": visibility,
+            "visibility": visibility.value,
         }
         await self._put(["directory", "list", "room", str(room_id)], payload=payload)
 
@@ -59,7 +68,7 @@ class MatrixClient:
         payload: dict[str, Any] = {
             "name": str(room_name),
             "room_alias_name": str(room_alias.name),
-            "visibility": "public",  # "private" or "public"
+            "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
             "invite": [str(e) for e in invite],
             "preset": "public_chat",  # default preset
         }
@@ -77,11 +86,11 @@ class MatrixClient:
         except HTTPNotFound:
             return None
 
-    async def send_message(self, room_id: RoomId, body: str, *, as_user_id: Optional[UserId] = None):
+    async def send_message(self, room_id: RoomId, body: Message, *, as_user_id: Optional[UserId] = None):
         txn_id = str(time.time())
         payload = {
             "msgtype": "m.text",
-            "body": body,
+            "body": str(body),
         }
 
         await self._put(

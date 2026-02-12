@@ -4,7 +4,7 @@ import enum
 from typing import Any, Optional
 
 from mesh2irc.common import ChannelName
-from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName
+from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppPrefix
 
 
 class MatrixBackend(enum.Enum):
@@ -20,11 +20,11 @@ class Config:
     app_user: UserName
     app_as_token: SecretText
     app_hs_token: SecretText
-    app_prefix: str
+    app_prefix: AppPrefix
     backend: MatrixBackend = MatrixBackend.SERVICE_APP
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
-    trusted_suffix: Optional[str] = "[trusted] "
+    trusted_prefix: Optional[str] = "[trusted] "
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
 
@@ -47,6 +47,8 @@ class Config:
             kwargs["app_as_token"] = SecretText(data["app_as_token"])
         if "app_hs_token" in data:
             kwargs["app_hs_token"] = SecretText(data["app_hs_token"])
+        if "app_prefix" in data:
+            kwargs["app_prefix"] = AppPrefix(data["app_prefix"])
         if "discovery_room_name" in data:
             kwargs["discovery_room_name"] = ChannelName(data["discovery_room_name"])
         if "backend" in data:

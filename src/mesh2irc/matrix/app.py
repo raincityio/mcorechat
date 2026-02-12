@@ -16,6 +16,7 @@ from mesh2irc.matrix.common import (
     MatrixEvent,
     RoomAlias,
     RoomId,
+    RoomVisibility,
     UserId,
     RoomMember,
     ChannelRoom,
@@ -64,7 +65,7 @@ class MatrixASChatter:
         if contact_name is not None:
             return DisplayName(str(contact_name))
         elif contact is not None:
-            return DisplayName(f"{self.config.trusted_suffix}{str(contact.name)}")
+            return DisplayName(f"{self.config.trusted_prefix}{str(contact.name)}")
         else:
             raise Exception(f"No contact name or contact provided")
 
@@ -108,7 +109,7 @@ class MatrixASChatter:
         for room_id in await self.client.get_public_rooms():
             for room_alias in await self.client.get_room_aliases(room_id):
                 await self.client.delete_room_alias(room_alias)
-            await self.client.set_room_visibility(room_id, "private")
+            await self.client.set_room_visibility(room_id, RoomVisibility.PRIVATE)
         raise Exception("DONE")
 
     ## Interface
@@ -342,5 +343,5 @@ class MatrixASChatter:
 
     def verify_as_token(self, request: Request):
         token = request.headers.get("Authorization")
-        if token != f"Bearer {self.config.app_hs_token.raw}":
+        if token != f"Bearer {self.config.app_hs_token.value}":
             raise web.HTTPUnauthorized()

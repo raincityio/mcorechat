@@ -43,17 +43,17 @@ class MatrixChatter:
         self.channel_callbacks = set[ChannelCallback]()
 
     async def init(self):
-        resp = await self.admin_client.login(self.config.admin_password.raw)
+        resp = await self.admin_client.login(self.config.admin_password.value)
         if isinstance(resp, LoginError):
             raise Exception(f"Login failed: {resp}")
 
     async def update_contact(self, contact: Contact):
         logger.debug(f"Updating contact: {contact}")
         user_id = UserId.create_from_contact(contact, self.config.domain)
-        if self.config.trusted_suffix is None:
+        if self.config.trusted_prefix is None:
             trusted_display_name = contact.name
         else:
-            trusted_display_name = ContactName(f"{contact.name} {self.config.trusted_suffix}")
+            trusted_display_name = ContactName(f"{contact.name} {self.config.trusted_prefix}")
         await self.update_user(
             user_id,
             trusted_display_name,
@@ -198,7 +198,7 @@ class MatrixChatter:
     async def login_user(self, user_id: UserId, user_password: SecretText) -> AsyncClient:
         logger.debug(f"Login user: {user_id} @ {self.config.homeserver}")
         client = AsyncClient(self.config.homeserver, str(user_id))
-        resp = await client.login(user_password.raw)
+        resp = await client.login(user_password.value)
         if isinstance(resp, LoginError):
             await client.close()
             raise Exception(f"Login failed: {resp} {user_id}")
@@ -234,7 +234,7 @@ class MatrixChatter:
         logger.error(f"Updating user: {user_id} @ {self.config.homeserver} {display_name}")
         url = f"{self.config.homeserver}/_synapse/admin/v2/users/{user_id}"
         payload = {
-            "password": user_password.raw,
+            "password": user_password.value,
             "admin": False,
             "deactivated": False,
             "displayname": str(display_name),
