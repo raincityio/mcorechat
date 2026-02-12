@@ -1,16 +1,60 @@
 #!/usr/bin/env python3
 import dataclasses
 import json
-from typing import Any, NewType
+from typing import Any
 
 from meshcore.events import Event, EventType
 
-Message = NewType("Message", str)
-MessageId = NewType("MessageId", str)
-ChannelName = NewType("ChannelName", str)
-ContactName = NewType("ContactName", str)
-PublicKey = NewType("PublicKey", str)
-PublicKeyPrefix = NewType("PublicKeyPrefix", str)
+
+@dataclasses.dataclass(frozen=True)
+class Message:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class MessageId:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class ChannelName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class ContactName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class PublicKeyPrefix:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class PublicKey:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+    def startswith(self, prefix: PublicKeyPrefix):
+        return self.value.startswith(prefix.value)
 
 
 @dataclasses.dataclass(frozen=True)

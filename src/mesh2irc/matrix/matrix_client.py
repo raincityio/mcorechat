@@ -39,7 +39,7 @@ class MatrixClient:
         await self._put(["profile", str(user_id), "displayname"], as_user_id=user_id, payload=payload)
 
     async def register_user(self, user_id: UserId):
-        payload = {"username": user_id.name, "type": "m.login.application_service"}
+        payload = {"username": str(user_id.name), "type": "m.login.application_service"}
         await self._post(["register"], payload=payload)
 
     async def get_public_rooms(self):
@@ -105,7 +105,7 @@ class MatrixClient:
         *,
         as_user_id: Optional[UserId] = None,
     ):
-        await self._post(["join", room_id], as_user_id=as_user_id)
+        await self._post(["join", str(room_id)], as_user_id=as_user_id)
 
     async def invite_user(
         self,

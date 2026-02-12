@@ -20,7 +20,6 @@ from mesh2irc.matrix.common import (
     UserId,
     RoomMember,
     ChannelRoom,
-    UserName,
     parse_room_alias,
     RoomMembership,
 )
@@ -40,7 +39,7 @@ class MatrixASChatter:
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
         self.admin_user = UserId(config.admin_user, config.domain)
-        self.app_user = UserId(UserName(config.app_user), config.domain)
+        self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
         self.discovery_room_id: Optional[RoomId] = None
 
@@ -80,7 +79,9 @@ class MatrixASChatter:
             discovery_room = await self.ensure_room(discovery_room_name, discovery_room_alias)
             self.discovery_room_id = discovery_room.room_id
             for member in discovery_room.members.values():
-                display_name = DisplayName(member.user_id.name) if member.display_name is None else member.display_name
+                display_name = (
+                    DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
+                )
                 self.user_cache[member.user_id] = display_name
 
     async def run(self):

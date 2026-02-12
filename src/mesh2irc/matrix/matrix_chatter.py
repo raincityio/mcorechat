@@ -38,7 +38,7 @@ class MatrixChatter:
         self.clients = dict[UserId, AsyncClient]()
         self.clients_lock = asyncio.Lock()
         self.admin_user_id = UserId(config.admin_user, config.domain)
-        self.admin_client = AsyncClient(config.homeserver, str(self.admin_user_id))
+        self.admin_client = AsyncClient(str(config.homeserver), str(self.admin_user_id))
         self.direct_callbacks = set[DirectCallback]()
         self.channel_callbacks = set[ChannelCallback]()
 
@@ -197,7 +197,7 @@ class MatrixChatter:
 
     async def login_user(self, user_id: UserId, user_password: SecretText) -> AsyncClient:
         logger.debug(f"Login user: {user_id} @ {self.config.homeserver}")
-        client = AsyncClient(self.config.homeserver, str(user_id))
+        client = AsyncClient(str(self.config.homeserver), str(user_id))
         resp = await client.login(user_password.value)
         if isinstance(resp, LoginError):
             await client.close()

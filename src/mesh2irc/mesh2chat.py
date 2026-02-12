@@ -123,7 +123,7 @@ class MeshCorePlus:
         name: Optional[ContactName] = None,
         public_key: Optional[PublicKey] = None,
         public_key_prefix: Optional[PublicKeyPrefix] = None,
-    ):
+    ) -> Optional[Contact]:
         if name is not None:
             return next(filter(lambda x: x.name == name, await self.get_contacts()), None)
         elif public_key is not None:
@@ -254,7 +254,7 @@ async def amain():
             logger.debug(f"Message marked: {message_id}")
             return
         if config.enable_send:
-            result = await meshcore.commands.send_msg(destination, message)
+            result = await meshcore.commands.send_msg(str(destination), str(message))
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
         else:

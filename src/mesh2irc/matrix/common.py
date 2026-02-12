@@ -3,17 +3,62 @@
 import dataclasses
 import enum
 import hashlib
-from typing import Any, NewType, Optional
+from typing import Any, Optional
 
 from mesh2irc.common import ContactName, Contact, PublicKey, ChannelName
 
-UserName = NewType("UserName", str)
-DomainName = NewType("DomainName", str)
-HomeserverURL = NewType("HomeserverURL", str)
-RoomId = NewType("RoomId", str)
-DisplayName = NewType("DisplayName", str)
 type MatrixEvent = dict[str, Any]
-AppPrefix = NewType("AppPrefix", str)
+
+
+@dataclasses.dataclass(frozen=True)
+class HomeserverURL:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class AppPrefix:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+    def __len__(self):
+        return len(self.value)
+
+
+@dataclasses.dataclass(frozen=True)
+class DisplayName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class RoomId:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class UserName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class DomainName:
+    value: str
+
+    def __str__(self):
+        return self.value
 
 
 class RoomVisibility(enum.Enum):
@@ -79,7 +124,7 @@ class UserId:
             user_name = UserName(f"t_{str(contact.public_key)}")
         else:
             user_name = UserName(f"{prefix}t_{str(contact.public_key)}")
-        return UserId(user_name, DomainName(domain), contact.public_key)
+        return UserId(user_name, domain, contact.public_key)
 
     @staticmethod
     def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
@@ -87,7 +132,7 @@ class UserId:
             user_name = UserName(f"u_{sha256(str(contact_name))}")
         else:
             user_name = UserName(f"{prefix}u_{sha256(str(contact_name))}")
-        return UserId(user_name, DomainName(domain))
+        return UserId(user_name, domain)
 
 
 def parse_user_id(app_prefix: AppPrefix, raw: str):
