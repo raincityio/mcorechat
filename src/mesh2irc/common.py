@@ -82,4 +82,13 @@ class JSONEncoder(json.JSONEncoder):
             return o.name
         elif isinstance(o, bytes):
             return o.hex()
+        elif type(o) in (
+            ChannelName,
+            Message,
+        ):
+            return str(o)
         return super().default(o)
+
+
+def jdump(o: Any):
+    return json.dumps(o, cls=JSONEncoder)

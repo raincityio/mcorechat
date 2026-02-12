@@ -3,9 +3,11 @@
 import dataclasses
 import enum
 import hashlib
+import json
 from typing import Any, Optional
 
 from mesh2irc.common import ContactName, Contact, PublicKey, ChannelName
+from mesh2irc.common import JSONEncoder as CommonJSONEncoder
 
 type MatrixEvent = dict[str, Any]
 
@@ -178,3 +180,14 @@ class ChannelRoom:
 
     def copy(self, **kwargs: Any):
         return ChannelRoom(**(self.to_data() | kwargs))
+
+
+class MatrixJSONEncoder(CommonJSONEncoder):
+    def default(self, o: Any) -> Any:
+        if type(o) in (RoomAlias, UserId, DisplayName, UserName):
+            return str(o)
+        return super().default(o)
+
+
+def matrix_jdump(obj: Any) -> Any:
+    return json.dumps(obj, cls=MatrixJSONEncoder)

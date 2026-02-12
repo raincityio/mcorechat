@@ -13,6 +13,7 @@ from mesh2irc.matrix.common import (
     UserId,
     RoomId,
     RoomAlias,
+    matrix_jdump,
     parse_room_alias,
     DisplayName,
     RoomVisibility,
@@ -30,16 +31,16 @@ class MatrixClient:
             "Authorization": f"Bearer {self.token.value}",
             "Content-Type": "application/json",
         }
-        self.session = aiohttp.ClientSession(headers=headers)
+        self.session = aiohttp.ClientSession(headers=headers, json_serialize=matrix_jdump)
 
     async def set_display_name(self, user_id: UserId, display_name: DisplayName) -> None:
         payload = {
-            "displayname": str(display_name),
+            "displayname": display_name,
         }
-        await self._put(["profile", str(user_id), "displayname"], as_user_id=user_id, payload=payload)
+        await self._put(["profile", user_id, "displayname"], as_user_id=user_id, payload=payload)
 
     async def register_user(self, user_id: UserId):
-        payload = {"username": str(user_id.name), "type": "m.login.application_service"}
+        payload = {"username": user_id.name, "type": "m.login.application_service"}
         await self._post(["register"], payload=payload)
 
     async def get_public_rooms(self):
@@ -47,18 +48,18 @@ class MatrixClient:
         return [RoomId(e["room_id"]) for e in data["chunk"]]
 
     async def get_room_members(self, room_id: RoomId, *, as_user_id: Optional[UserId] = None):
-        data = await self._get(["rooms", str(room_id), "members"], as_user_id=as_user_id)
+        data = await self._get(["rooms", room_id, "members"], as_user_id=as_user_id)
         print(data)
 
     async def get_room_aliases(self, room_id: RoomId, *, as_user_id: Optional[UserId] = None):
-        data = await self._get(["rooms", str(room_id), "aliases"], as_user_id=as_user_id)
+        data = await self._get(["rooms", room_id, "aliases"], as_user_id=as_user_id)
         return [parse_room_alias(e) for e in data["aliases"]]
 
     async def set_room_visibility(self, room_id: RoomId, visibility: RoomVisibility):
         payload = {
             "visibility": visibility.value,
         }
-        await self._put(["directory", "list", "room", str(room_id)], payload=payload)
+        await self._put(["directory", "list", "room", room_id], payload=payload)
 
     async def joined_rooms(self, *, as_user_id: Optional[UserId] = None):
         data = await self._get(["joined_rooms"], as_user_id=as_user_id)
@@ -66,10 +67,10 @@ class MatrixClient:
 
     async def create_room(self, room_name: ChannelName, room_alias: RoomAlias, invite: list[UserId]):
         payload: dict[str, Any] = {
-            "name": str(room_name),
-            "room_alias_name": str(room_alias.name),
+            "name": room_name,
+            "room_alias_name": room_alias.name,
             "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
-            "invite": [str(e) for e in invite],
+            "invite": [e for e in invite],
             "preset": "public_chat",  # default preset
         }
 
@@ -77,11 +78,11 @@ class MatrixClient:
         return RoomId(data["room_id"])
 
     async def delete_room_alias(self, alias: RoomAlias) -> None:
-        return await self._delete(["directory", "room", str(alias)])
+        return await self._delete(["directory", "room", alias])
 
     async def get_room_id_by_alias(self, room_alias: RoomAlias):
         try:
-            data = await self._get(["directory", "room", str(room_alias)])
+            data = await self._get(["directory", "room", room_alias])
             return RoomId(data["room_id"])
         except HTTPNotFound:
             return None
@@ -90,11 +91,11 @@ class MatrixClient:
         txn_id = str(time.time())
         payload = {
             "msgtype": "m.text",
-            "body": str(body),
+            "body": body,
         }
 
         await self._put(
-            ["rooms", str(room_id), "send", "m.room.message", str(txn_id)],
+            ["rooms", room_id, "send", "m.room.message", txn_id],
             as_user_id=as_user_id,
             payload=payload,
         )
@@ -105,18 +106,18 @@ class MatrixClient:
         *,
         as_user_id: Optional[UserId] = None,
     ):
-        await self._post(["join", str(room_id)], as_user_id=as_user_id)
+        await self._post(["join", room_id], as_user_id=as_user_id)
 
     async def invite_user(
         self,
         room_id: RoomId,
         user_id: UserId,
     ):
-        payload = {"user_id": str(user_id)}
-        await self._post(["rooms", str(room_id), "invite"], payload=payload)
+        payload = {"user_id": user_id}
+        await self._post(["rooms", room_id, "invite"], payload=payload)
 
     async def get_room_state(self, room_id: RoomId, *, as_user_id: Optional[UserId] = None):
-        return await self._get(["rooms", str(room_id), "state"], as_user_id=as_user_id)
+        return await self._get(["rooms", room_id, "state"], as_user_id=as_user_id)
 
     async def _put(self, *args: Any, **kwargs: Any) -> Any:
         return await self._http_client_verb("put", *args, **kwargs)
@@ -146,7 +147,8 @@ class MatrixClient:
             }
         payload = {} if payload is None else payload
         full_path = ["_matrix", "client", "v3"] + path
-        quoted_path = "/".join([quote(e) for e in full_path])
+        encoded_path = [str(e) for e in full_path]
+        quoted_path = "/".join([quote(e) for e in encoded_path])
         url = f"{self.homeserver}/{quoted_path}"
         logger.debug(f"sending {verb} {url} {params} {payload}")
         if verb == "get":
