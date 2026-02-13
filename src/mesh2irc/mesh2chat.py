@@ -242,7 +242,7 @@ async def amain():
             raise Exception(f"Unknown channel: {channel_name}")
         if config.enable_send:
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
-                channel.idx, message
+                channel.idx, str(message)
             )
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
