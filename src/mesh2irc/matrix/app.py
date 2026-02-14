@@ -8,7 +8,7 @@ from meshcore.events import Event
 from nio import AsyncClient, LoginError, RoomInviteError
 
 from mesh2irc.chatter import DirectCallback, ChannelCallback
-from mesh2irc.common import ContactName, Message, ChannelName, Contact
+from mesh2irc.common import ContactName, Message, ChannelName, Contact, PublicKey
 from mesh2irc.matrix import common
 from mesh2irc.matrix.common import (
     DisplayName,
@@ -45,6 +45,7 @@ class MatrixASChatter:
         self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
         self.discovery_room_id: RoomId | None = None
+        self.advertisement_room_id: RoomId | None = None
         self._event_handlers: dict[str, EventHandler] = {
             "m.room.create": self.handle_room_create,
             "m.room.member": self.handle_room_member,
@@ -101,6 +102,11 @@ class MatrixASChatter:
                     DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
                 )
                 self.user_cache[member.user_id] = display_name
+        if self.config.enable_advertisement_room:
+            advertisement_room_name = self.config.advertisement_room_name
+            advertisement_room_alias = self.create_room_alias(advertisement_room_name)
+            advertisement_room = await self.ensure_room(advertisement_room_name, advertisement_room_alias)
+            self.advertisement_room_id = advertisement_room.room_id
 
     async def run(self):
         app = web.Application()
@@ -125,6 +131,20 @@ class MatrixASChatter:
         logger.debug(f"Started server on {9000}")
 
     ## Interface
+    async def advertise(self, public_key: PublicKey, *, contact: Contact | None = None) -> None:
+        if self.config.enable_advertisement_room:
+            assert self.advertisement_room_id is not None
+            message = Message(str(public_key))
+            if contact is None:
+                await self.client.send_message(self.advertisement_room_id, message)
+            else:
+                user_id = self.create_user_id(contact=contact)
+                display_name = self.create_display_name(contact=contact)
+                await self.ensure_user(user_id, display_name)
+                room = await self.get_room(self.advertisement_room_id)
+                await self.ensure_room_join_membership(room, user_id)
+                await self.client.send_message(self.advertisement_room_id, message, as_user_id=user_id)
+
     async def update_contact(self, contact: Contact) -> None:
         user_id = self.create_user_id(contact=contact)
         await self.ensure_user(user_id, self.create_display_name(contact=contact))
@@ -280,8 +300,6 @@ class MatrixASChatter:
 
     async def handle_room_message(self, event: MatrixEvent) -> None:
         # m.room.message
-        print("DDRREEWW")
-        print(event)
         event_id = event["event_id"]
         user_id = self.parse_user_id(event["sender"])
         if user_id != self.admin_user:
@@ -294,11 +312,14 @@ class MatrixASChatter:
             for member in room.members.values():
                 if (member.user_id not in (self.admin_user, self.app_user)) and member.user_id.public_key is not None:
                     for cb in self.direct_callbacks:
-                        await cb(member.user_id.public_key, message, event_id)
+                        if not await cb(member.user_id.public_key, message, event_id):
+                            await self.client.send_message(room_id, Message("Failed to send message"))
+                            pass
                     break
         else:
             for cb in self.channel_callbacks:
-                await cb(room.name, message, event_id)
+                if not await cb(room.name, message, event_id):
+                    await self.client.send_message(room_id, Message("Failed to send message"))
 
     def _build_room_from_state(self, room_id: RoomId, state: list[MatrixEvent]) -> ChannelRoom:
         room = ChannelRoom(room_id)

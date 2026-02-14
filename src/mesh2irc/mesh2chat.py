@@ -174,6 +174,14 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
                 loop_f.set_exception(e)
 
     mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, messages_waiting)
+
+    async def handle_advertisement(_event: Event):
+        public_key = PublicKey(_event.payload["public_key"])
+        contact = await mcp.get_contact(public_key=public_key)
+        await chatter.advertise(public_key, contact=contact)
+
+    mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_advertisement)
+
     await drive_messages()
 
     await loop_f
@@ -236,10 +244,11 @@ async def amain():
     async def channel_callback(channel_name: ChannelName, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
-            return
+            return True
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
-            raise Exception(f"Unknown channel: {channel_name}")
+            return False
+            # raise UnknownChannelException(f"Unknown channel: {channel_name}")
         if config.enable_send:
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
                 channel.idx, str(message)
@@ -248,18 +257,21 @@ async def amain():
             state.mark_message_id(message_id)
         else:
             logger.debug(f"!send message {message} {message_id}")
+        return True
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
-            return
+            return True
         if config.enable_send:
             logger.info(f"Direct message: {destination} -> {message}")
             result = await meshcore.commands.send_msg(str(destination), str(message))
+            # TODO error check
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)
         else:
             logger.debug(f"!send message {message} {message_id}")
+        return False
 
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)

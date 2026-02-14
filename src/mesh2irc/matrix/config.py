@@ -27,6 +27,8 @@ class Config:
     trusted_prefix: str | None = "[trusted] "
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
+    enable_advertisement_room: bool = True
+    advertisement_room_name: ChannelName = ChannelName("[advertisements]")
     admin_password: SecretText | None = None
     admin_password_path: Path | None = None
 
@@ -44,6 +46,7 @@ class Config:
             "app_hs_token": SecretText,
             "app_prefix": AppPrefix,
             "discovery_room_name": ChannelName,
+            "advertisement_room_name": ChannelName,
             "backend": MatrixBackend,
         }
         kwargs = data.copy()
