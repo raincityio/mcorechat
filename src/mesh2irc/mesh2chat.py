@@ -254,6 +254,7 @@ async def amain():
             logger.debug(f"Message marked: {message_id}")
             return
         if config.enable_send:
+            logger.info(f"Direct message: {destination} -> {message}")
             result = await meshcore.commands.send_msg(str(destination), str(message))
             logger.debug(f"send message {result}")
             state.mark_message_id(message_id)

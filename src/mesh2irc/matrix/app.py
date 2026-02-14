@@ -5,6 +5,7 @@ from collections.abc import Callable, Awaitable
 from aiohttp import web
 from aiohttp.web_request import Request
 from meshcore.events import Event
+from nio import AsyncClient, LoginError, RoomInviteError
 
 from mesh2irc.chatter import DirectCallback, ChannelCallback
 from mesh2irc.common import ContactName, Message, ChannelName, Contact
@@ -15,6 +16,7 @@ from mesh2irc.matrix.common import (
     MatrixEvent,
     RoomAlias,
     RoomId,
+    SecretText,
     UserId,
     RoomMember,
     ChannelRoom,
@@ -39,6 +41,7 @@ class MatrixASChatter:
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
         self.admin_user = UserId(config.admin_user, config.domain)
+        self.admin_client = AsyncClient(str(config.homeserver), str(config.admin_user))
         self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
         self.discovery_room_id: RoomId | None = None
@@ -79,6 +82,15 @@ class MatrixASChatter:
     async def init(self):
         # FIXME this doesn't work
         # await self.client.set_display_name(self.app_user, ContactName("MeshBot"))
+        if self.config.admin_password is not None:
+            admin_password = self.config.admin_password
+        elif self.config.admin_password_path is not None:
+            admin_password = SecretText(self.config.admin_password_path.expanduser().read_text().strip())
+        else:
+            raise Exception("Exactly one of admin_password or admin_password_path must be provided")
+        login_resp = await self.admin_client.login(admin_password.value)
+        if type(login_resp) is LoginError:
+            raise Exception(f"Login failed with {login_resp}")
         if self.config.enable_discovery_room:
             discovery_room_name = self.config.discovery_room_name
             discovery_room_alias = self.create_room_alias(discovery_room_name)
@@ -124,7 +136,33 @@ class MatrixASChatter:
         await self.ensure_room(channel_name, room_alias)
 
     async def send_direct(self, source: Contact, message: Message, event: Event) -> None:
-        logger.error(f"Direct not supported yet!")
+        source_user_id = self.create_user_id(contact=source)
+        await self.ensure_user(source_user_id, self.create_display_name(contact=source))
+        room = await self._find_dm_room(source_user_id)
+        if room is None:
+            room_id = await self.client.create_direct_room(
+                invite=[self.admin_user, self.app_user],
+                as_user_id=source_user_id,
+            )
+            room = await self.get_room(room_id)
+        await self.client.send_message(room.room_id, message, as_user_id=source_user_id)
+
+    async def _find_dm_room(self, user_id: UserId) -> ChannelRoom | None:
+        def check_room(_room: ChannelRoom):
+            return _room.is_present(user_id) and _room.is_present(self.admin_user)
+
+        for room in self.room_cache.values():
+            if room.name is not None:
+                continue
+            if check_room(room):
+                return room
+        for room_id in await self.client.joined_rooms():
+            room = await self.get_room(room_id)
+            if room.name is not None:
+                continue
+            if check_room(room):
+                return room
+        return None
 
     async def ensure_room(self, room_name: ChannelName, room_alias: RoomAlias):
         room = next(filter(lambda x: room_alias == x.alias, self.room_cache.values()), None)
@@ -236,9 +274,14 @@ class MatrixASChatter:
         if member.membership == RoomMembership.INVITE:
             if member.user_id != self.admin_user:
                 await self.client.join_room(room_id, as_user_id=member.user_id)
+            if member.is_direct:
+                await self.client.invite_user(room_id, self.app_user, as_user_id=member.user_id)
+                await self.client.join_room(room_id)
 
     async def handle_room_message(self, event: MatrixEvent) -> None:
         # m.room.message
+        print("DDRREEWW")
+        print(event)
         event_id = event["event_id"]
         user_id = self.parse_user_id(event["sender"])
         if user_id != self.admin_user:
@@ -246,8 +289,13 @@ class MatrixASChatter:
         room_id = RoomId(event["room_id"])
         room = await self.get_room(room_id)
         message = Message(event["content"]["body"])
+        # should be a DM room if name is none
         if room.name is None:
-            logger.error("DIRECT NOT SUPPORTED YET")
+            for member in room.members.values():
+                if (member.user_id not in (self.admin_user, self.app_user)) and member.user_id.public_key is not None:
+                    for cb in self.direct_callbacks:
+                        await cb(member.user_id.public_key, message, event_id)
+                    break
         else:
             for cb in self.channel_callbacks:
                 await cb(room.name, message, event_id)
@@ -273,12 +321,31 @@ class MatrixASChatter:
         async with self.room_cache_lock:
             room = self.room_cache.get(room_id)
             if room is None:
-                state = await self.client.get_room_state(room_id, as_user_id=as_user_id)
+                try:
+                    state = await self.client.get_room_state(room_id, as_user_id=as_user_id)
+                except MatrixAPIError as e:
+                    raise
+                    # we assume the only reason this happens is probably DM related
+                    if e.status == 403:
+                        room_invite_resp = await self.admin_client.room_invite(str(room_id), str(self.app_user))
+                        if type(room_invite_resp) is RoomInviteError:
+                            raise Exception(f"Room {room_id} invite failed: {room_invite_resp}")
+                        await self.client.join_room(room_id)
+                        state = await self.client.get_room_state(room_id, as_user_id=as_user_id)
+
+                        # await self.client.invite_user(room_id, as_user_id)
                 room = self._build_room_from_state(room_id, state)
                 self.room_cache[room_id] = room
         return room
 
     async def transactions(self, request: Request):
+        try:
+            return await self.transactions_(request)
+        except Exception as e:
+            logger.exception(e)
+            return web.json_response({})
+
+    async def transactions_(self, request: Request):
         logger.debug(request)
         self.verify_as_token(request)
         payload = await request.json()

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import dataclasses
 import enum
+from pathlib import Path
 from typing import Any
 
 from mesh2irc.common import ChannelName
@@ -16,7 +17,6 @@ class MatrixBackend(enum.Enum):
 class Config:
     domain: DomainName
     admin_user: UserName
-    admin_password: SecretText
     app_user: UserName
     app_as_token: SecretText
     app_hs_token: SecretText
@@ -27,6 +27,8 @@ class Config:
     trusted_prefix: str | None = "[trusted] "
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
+    admin_password: SecretText | None = None
+    admin_password_path: Path | None = None
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
@@ -34,6 +36,7 @@ class Config:
             "domain": DomainName,
             "admin_user": UserName,
             "admin_password": SecretText,
+            "admin_password_path": Path,
             "homeserver": HomeserverURL,
             "user_password": SecretText,
             "app_user": UserName,

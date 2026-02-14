@@ -80,6 +80,16 @@ class MatrixClient:
         data = await self._post(["createRoom"], payload=payload)
         return RoomId(data["room_id"])
 
+    async def create_direct_room(self, invite: list[UserId], *, as_user_id: UserId | None = None) -> RoomId:
+        payload: dict[str, Any] = {
+            "visibility": RoomVisibility.PRIVATE.value,
+            "invite": [e for e in invite],
+            "is_direct": True,
+            "preset": "trusted_private_chat",
+        }
+        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
+        return RoomId(data["room_id"])
+
     async def delete_room_alias(self, alias: RoomAlias) -> None:
         return await self._delete(["directory", "room", alias])
 
@@ -117,9 +127,11 @@ class MatrixClient:
         self,
         room_id: RoomId,
         user_id: UserId,
+        *,
+        as_user_id: UserId | None = None,
     ):
         payload = {"user_id": user_id}
-        await self._post(["rooms", room_id, "invite"], payload=payload)
+        await self._post(["rooms", room_id, "invite"], payload=payload, as_user_id=as_user_id)
 
     async def get_room_state(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         return await self._get(["rooms", room_id, "state"], as_user_id=as_user_id)
