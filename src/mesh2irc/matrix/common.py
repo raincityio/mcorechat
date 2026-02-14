@@ -4,7 +4,7 @@ import dataclasses
 import enum
 import hashlib
 import json
-from typing import Any, Optional
+from typing import Any
 
 from mesh2irc.common import ContactName, Contact, PublicKey, ChannelName
 from mesh2irc.common import JSONEncoder as CommonJSONEncoder
@@ -68,10 +68,6 @@ class RoomVisibility(enum.Enum):
     PRIVATE = "private"
 
 
-def shallow_copy(obj: Any) -> Any:
-    return {field.name: getattr(obj, field.name) for field in dataclasses.fields(obj)}
-
-
 @dataclasses.dataclass(frozen=True)
 class SecretText:
     value: str
@@ -98,11 +94,9 @@ class RoomAlias:
         return f"#{self.name}:{self.domain}"
 
     @staticmethod
-    def from_name(name: ChannelName, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
-        if prefix is None:
-            return RoomAlias(name, domain)
-        name = ChannelName(f"{prefix}{name}")
-        return RoomAlias(name, domain)
+    def from_name(name: ChannelName, domain: DomainName, *, prefix: AppPrefix | None = None):
+        prefix_str = "" if prefix is None else str(prefix)
+        return RoomAlias(ChannelName(f"{prefix_str}{name}"), domain)
 
 
 def parse_room_alias(raw: str):
@@ -115,25 +109,21 @@ def parse_room_alias(raw: str):
 class UserId:
     name: UserName
     domain: DomainName
-    public_key: Optional[PublicKey] = None
+    public_key: PublicKey | None = None
 
     def __str__(self):
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
-        if prefix is None:
-            user_name = UserName(f"t_{str(contact.public_key)}")
-        else:
-            user_name = UserName(f"{prefix}t_{str(contact.public_key)}")
+    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: AppPrefix | None = None):
+        prefix_str = "" if prefix is None else str(prefix)
+        user_name = UserName(f"{prefix_str}t_{contact.public_key}")
         return UserId(user_name, domain, contact.public_key)
 
     @staticmethod
-    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: Optional[AppPrefix] = None):
-        if prefix is None:
-            user_name = UserName(f"u_{sha256(str(contact_name))}")
-        else:
-            user_name = UserName(f"{prefix}u_{sha256(str(contact_name))}")
+    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: AppPrefix | None = None):
+        prefix_str = "" if prefix is None else str(prefix)
+        user_name = UserName(f"{prefix_str}u_{sha256(str(contact_name))}")
         return UserId(user_name, domain)
 
 
@@ -165,21 +155,23 @@ class RoomMember:
     user_id: UserId
     is_direct: bool
     membership: RoomMembership
-    display_name: Optional[DisplayName]
+    display_name: DisplayName | None
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class ChannelRoom:
     room_id: RoomId
-    name: Optional[ChannelName] = None
+    name: ChannelName | None = None
     members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
-    alias: Optional[RoomAlias] = None
+    alias: RoomAlias | None = None
 
-    def to_data(self):
-        return shallow_copy(self)
 
-    def copy(self, **kwargs: Any):
-        return ChannelRoom(**(self.to_data() | kwargs))
+class MatrixAPIError(Exception):
+    def __init__(self, status: int, errcode: str, error: str):
+        self.status = status
+        self.errcode = errcode
+        self.error = error
+        super().__init__(f"{status} {errcode}: {error}")
 
 
 class MatrixJSONEncoder(CommonJSONEncoder):

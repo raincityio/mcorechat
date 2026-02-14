@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import dataclasses
 import enum
-from typing import Any, Optional
+from typing import Any
 
 from mesh2irc.common import ChannelName
 from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppPrefix
@@ -24,33 +24,27 @@ class Config:
     backend: MatrixBackend = MatrixBackend.SERVICE_APP
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
-    trusted_prefix: Optional[str] = "[trusted] "
+    trusted_prefix: str | None = "[trusted] "
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
+        field_types: dict[str, type] = {
+            "domain": DomainName,
+            "admin_user": UserName,
+            "admin_password": SecretText,
+            "homeserver": HomeserverURL,
+            "user_password": SecretText,
+            "app_user": UserName,
+            "app_as_token": SecretText,
+            "app_hs_token": SecretText,
+            "app_prefix": AppPrefix,
+            "discovery_room_name": ChannelName,
+            "backend": MatrixBackend,
+        }
         kwargs = data.copy()
-        if "domain" in data:
-            kwargs["domain"] = DomainName(data["domain"])
-        if "admin_user" in data:
-            kwargs["admin_user"] = UserName(data["admin_user"])
-        if "admin_password" in data:
-            kwargs["admin_password"] = SecretText(data["admin_password"])
-        if "homeserver" in data:
-            kwargs["homeserver"] = HomeserverURL(data["homeserver"])
-        if "user_password" in data:
-            kwargs["user_password"] = SecretText(data["user_password"])
-        if "app_user" in data:
-            kwargs["app_user"] = UserName(data["app_user"])
-        if "app_as_token" in data:
-            kwargs["app_as_token"] = SecretText(data["app_as_token"])
-        if "app_hs_token" in data:
-            kwargs["app_hs_token"] = SecretText(data["app_hs_token"])
-        if "app_prefix" in data:
-            kwargs["app_prefix"] = AppPrefix(data["app_prefix"])
-        if "discovery_room_name" in data:
-            kwargs["discovery_room_name"] = ChannelName(data["discovery_room_name"])
-        if "backend" in data:
-            kwargs["backend"] = MatrixBackend(data["backend"])
+        for key, cls in field_types.items():
+            if key in data:
+                kwargs[key] = cls(data[key])
         return Config(**kwargs)
