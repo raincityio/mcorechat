@@ -52,6 +52,7 @@ class Config:
     seed_contacts: bool = True
     seed_channels: bool = True
     enable_send: bool = True
+    advertise_known: bool = False
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":

@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 import dataclasses
-import enum
 from pathlib import Path
 from typing import Any
 
 from mesh2irc.common import ChannelName
 from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppPrefix
-
-
-class MatrixBackend(enum.Enum):
-    POC = "poc"
-    SERVICE_APP = "service_app"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -21,7 +15,6 @@ class Config:
     app_as_token: SecretText
     app_hs_token: SecretText
     app_prefix: AppPrefix
-    backend: MatrixBackend = MatrixBackend.SERVICE_APP
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
     trusted_prefix: str | None = "[trusted] "
@@ -47,7 +40,6 @@ class Config:
             "app_prefix": AppPrefix,
             "discovery_room_name": ChannelName,
             "advertisement_room_name": ChannelName,
-            "backend": MatrixBackend,
         }
         kwargs = data.copy()
         for key, cls in field_types.items():

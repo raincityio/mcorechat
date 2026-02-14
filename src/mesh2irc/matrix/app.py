@@ -312,14 +312,17 @@ class MatrixASChatter:
             for member in room.members.values():
                 if (member.user_id not in (self.admin_user, self.app_user)) and member.user_id.public_key is not None:
                     for cb in self.direct_callbacks:
-                        if not await cb(member.user_id.public_key, message, event_id):
-                            await self.client.send_message(room_id, Message("Failed to send message"))
-                            pass
+                        try:
+                            await cb(member.user_id.public_key, message, event_id)
+                        except Exception as e:
+                            await self.client.send_message(room_id, Message(f"Failed to send message: {e}"))
                     break
         else:
             for cb in self.channel_callbacks:
-                if not await cb(room.name, message, event_id):
-                    await self.client.send_message(room_id, Message("Failed to send message"))
+                try:
+                    await cb(room.name, message, event_id)
+                except Exception as e:
+                    await self.client.send_message(room_id, Message(f"Failed to send message: {e}"))
 
     def _build_room_from_state(self, room_id: RoomId, state: list[MatrixEvent]) -> ChannelRoom:
         room = ChannelRoom(room_id)

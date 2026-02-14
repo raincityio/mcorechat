@@ -28,8 +28,6 @@ from mesh2irc.common import (
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.json_state import JsonState
 from mesh2irc.matrix.app import MatrixASChatter
-from mesh2irc.matrix.config import MatrixBackend
-from mesh2irc.matrix.matrix_chatter import MatrixChatter
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +131,7 @@ class MeshCorePlus:
         raise Exception("Missing contact key")
 
 
-async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
+async def main_loop(config: Config, mcp: MeshCorePlus, chatter: Chatter):
 
     async def drive_messages():
         while True:
@@ -178,9 +176,22 @@ async def main_loop(mcp: MeshCorePlus, chatter: Chatter):
     async def handle_advertisement(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
-        await chatter.advertise(public_key, contact=contact)
+        if contact is None:
+            advertise = True
+        else:
+            advertise = config.advertise_known
+        if advertise:
+            await chatter.advertise(public_key, contact=contact)
 
     mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_advertisement)
+
+    async def handle_new_contact(_event: Event):
+        public_key = PublicKey(_event.payload["public_key"])
+        contact = await mcp.get_contact(public_key=public_key)
+        if contact is not None:
+            await chatter.update_contact(contact)
+
+    mcp.meshcore.subscribe(EventType.NEW_CONTACT, handle_new_contact)
 
     await drive_messages()
 
@@ -228,15 +239,8 @@ async def amain():
     logger.debug(f"Config: {config}")
 
     meshcore = await get_meshcore(config.meshcore, main_task)
-    chatter: Chatter
-    if config.matrix.backend == MatrixBackend.POC:
-        m_chatter = MatrixChatter(config.matrix)
-        chatter = m_chatter
-        await m_chatter.init()
-    else:
-        as_chatter = MatrixASChatter(config.matrix)
-        chatter = as_chatter
-        await as_chatter.init()
+    chatter: Chatter = MatrixASChatter(config.matrix)
+    await chatter.init()
     state = JsonState(config.json_state)
     state.load()
     mcp = MeshCorePlus(meshcore)
@@ -244,11 +248,10 @@ async def amain():
     async def channel_callback(channel_name: ChannelName, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
-            return True
+            return
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
-            return False
-            # raise UnknownChannelException(f"Unknown channel: {channel_name}")
+            raise Exception(f"Unknown channel: {channel_name}")
         if config.enable_send:
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
                 channel.idx, str(message)
@@ -257,12 +260,11 @@ async def amain():
             state.mark_message_id(message_id)
         else:
             logger.debug(f"!send message {message} {message_id}")
-        return True
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
         if state.is_message_id_marked(message_id):
             logger.debug(f"Message marked: {message_id}")
-            return True
+            return
         if config.enable_send:
             logger.info(f"Direct message: {destination} -> {message}")
             result = await meshcore.commands.send_msg(str(destination), str(message))
@@ -271,7 +273,6 @@ async def amain():
             state.mark_message_id(message_id)
         else:
             logger.debug(f"!send message {message} {message_id}")
-        return False
 
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
@@ -303,7 +304,7 @@ async def amain():
             if config.seed_channels:
                 g.create_task(seed_channels())
             g.create_task(chatter.run())
-            g.create_task(main_loop(mcp, chatter))
+            g.create_task(main_loop(config, mcp, chatter))
 
             async def commiter():
                 while True:
