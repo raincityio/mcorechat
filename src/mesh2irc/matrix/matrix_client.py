@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from mesh2irc.common import ChannelName, Message
+from mesh2irc.common import ChannelName, HTMLMessage, Message
 from mesh2irc.matrix.common import (
     HomeserverURL,
     SecretText,
@@ -18,6 +18,7 @@ from mesh2irc.matrix.common import (
     RoomVisibility,
     parse_room_alias,
 )
+from mesh2irc.matrix.htmlutils import strip_html
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +103,24 @@ class MatrixClient:
                 return None
             raise
 
-    async def send_message(self, room_id: RoomId, body: Message, *, as_user_id: UserId | None = None):
+    async def send_message(self, room_id: RoomId, body: Message | HTMLMessage, *, as_user_id: UserId | None = None):
         txn_id = str(time.time())
-        payload = {
-            "msgtype": "m.text",
-            "body": body,
-        }
+        # 'format': 'org.matrix.custom.html'
+        # 'formatted_body': ''
+
+        match body:
+            case Message():
+                payload = {
+                    "msgtype": "m.text",
+                    "body": body,
+                }
+            case HTMLMessage():
+                payload = {
+                    "format": "org.matrix.custom.html",
+                    "formatted_body": body.value,
+                    "msgtype": "m.text",
+                    "body": strip_html(body.value),
+                }
 
         await self._put(
             ["rooms", room_id, "send", "m.room.message", txn_id],

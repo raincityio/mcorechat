@@ -17,7 +17,7 @@ class Config:
     app_prefix: AppPrefix
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
-    trusted_prefix: str | None = "[trusted] "
+    trusted_suffix: str | None = " [trusted]"
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True

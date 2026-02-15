@@ -26,7 +26,6 @@ from mesh2irc.common import (
     MessageId,
 )
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
-from mesh2irc.json_state import JsonState
 from mesh2irc.matrix.app import MatrixASChatter
 
 logger = logging.getLogger(__name__)
@@ -241,14 +240,9 @@ async def amain():
     meshcore = await get_meshcore(config.meshcore, main_task)
     chatter: Chatter = MatrixASChatter(config.matrix)
     await chatter.init()
-    state = JsonState(config.json_state)
-    state.load()
     mcp = MeshCorePlus(meshcore)
 
     async def channel_callback(channel_name: ChannelName, message: Message, message_id: MessageId):
-        if state.is_message_id_marked(message_id):
-            logger.debug(f"Message marked: {message_id}")
-            return
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise Exception(f"Unknown channel: {channel_name}")
@@ -256,21 +250,19 @@ async def amain():
             result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
                 channel.idx, str(message)
             )
-            logger.debug(f"send message {result}")
-            state.mark_message_id(message_id)
+            if result.type == EventType.ERROR:
+                raise Exception(result.payload)
         else:
             logger.debug(f"!send message {message} {message_id}")
 
     async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
-        if state.is_message_id_marked(message_id):
-            logger.debug(f"Message marked: {message_id}")
-            return
+        if len(message) > 156:
+            raise Exception(f"Message too long: len[{len(message)}] > {156}")
         if config.enable_send:
             logger.info(f"Direct message: {destination} -> {message}")
             result = await meshcore.commands.send_msg(str(destination), str(message))
-            # TODO error check
-            logger.debug(f"send message {result}")
-            state.mark_message_id(message_id)
+            if result.type == EventType.ERROR:
+                raise Exception(result.payload)
         else:
             logger.debug(f"!send message {message} {message_id}")
 
@@ -297,23 +289,19 @@ async def amain():
 
     # await seed_channels()
 
-    try:
-        async with TaskGroup() as g:
-            if config.seed_contacts:
-                g.create_task(seed_contacts())
-            if config.seed_channels:
-                g.create_task(seed_channels())
-            g.create_task(chatter.run())
-            g.create_task(main_loop(config, mcp, chatter))
+    async with TaskGroup() as g:
+        if config.seed_contacts:
+            g.create_task(seed_contacts())
+        if config.seed_channels:
+            g.create_task(seed_channels())
+        g.create_task(chatter.run())
+        g.create_task(main_loop(config, mcp, chatter))
 
-            async def commiter():
-                while True:
-                    await asyncio.sleep(10)
-                    state.commit()
+        async def commiter():
+            while True:
+                await asyncio.sleep(10)
 
-            g.create_task(commiter())
-    finally:
-        state.commit()
+        g.create_task(commiter())
 
 
 def main():

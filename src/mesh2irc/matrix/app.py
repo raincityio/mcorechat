@@ -8,7 +8,7 @@ from meshcore.events import Event
 from nio import AsyncClient, LoginError, RoomInviteError
 
 from mesh2irc.chatter import DirectCallback, ChannelCallback
-from mesh2irc.common import ContactName, Message, ChannelName, Contact, PublicKey
+from mesh2irc.common import ContactName, Message, ChannelName, Contact, PublicKey, HTMLMessage
 from mesh2irc.matrix import common
 from mesh2irc.matrix.common import (
     DisplayName,
@@ -75,7 +75,7 @@ class MatrixASChatter:
             case (ContactName() as cn, None):
                 return DisplayName(str(cn))
             case (None, Contact() as c):
-                return DisplayName(f"{self.config.trusted_prefix}{str(c.name)}")
+                return DisplayName(f"{str(c.name)}{self.config.trusted_suffix}")
             case _:
                 raise Exception("Exactly one of contact_name or contact must be provided")
 
@@ -315,14 +315,16 @@ class MatrixASChatter:
                         try:
                             await cb(member.user_id.public_key, message, event_id)
                         except Exception as e:
-                            await self.client.send_message(room_id, Message(f"Failed to send message: {e}"))
+                            await self.client.send_message(
+                                room_id, HTMLMessage(f"<i><b>Failed to send message:</b> {e}</i>")
+                            )
                     break
         else:
             for cb in self.channel_callbacks:
                 try:
                     await cb(room.name, message, event_id)
                 except Exception as e:
-                    await self.client.send_message(room_id, Message(f"Failed to send message: {e}"))
+                    await self.client.send_message(room_id, HTMLMessage(f"<i><b>Failed to send message:</b> {e}</i>"))
 
     def _build_room_from_state(self, room_id: RoomId, state: list[MatrixEvent]) -> ChannelRoom:
         room = ChannelRoom(room_id)

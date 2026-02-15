@@ -13,6 +13,14 @@ class Message:
     def __str__(self):
         return self.value
 
+    def __len__(self):
+        return len(self.value)
+
+
+@dataclasses.dataclass(frozen=True)
+class HTMLMessage:
+    value: str
+
 
 @dataclasses.dataclass(frozen=True)
 class MessageId:
