@@ -101,6 +101,9 @@ class RoomAlias:
         prefix_str = "" if prefix is None else str(prefix)
         return RoomAlias(ChannelName(f"{prefix_str}{name}"), domain)
 
+    def startswith(self, prefix: AppPrefix):
+        return str(self.name).startswith(str(prefix))
+
 
 def parse_room_alias(raw: str):
     assert raw.startswith("#")
@@ -184,7 +187,7 @@ class MatrixAPIError(Exception):
 
 class MatrixJSONEncoder(CommonJSONEncoder):
     def default(self, o: Any) -> Any:
-        if type(o) in (RoomAlias, UserId, DisplayName, UserName):
+        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId):
             return str(o)
         return super().default(o)
 

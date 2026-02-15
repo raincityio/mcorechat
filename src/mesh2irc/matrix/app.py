@@ -40,7 +40,6 @@ class MatrixASChatter:
         self.room_cache: dict[RoomId, ChannelRoom] = {}
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
-        # self.admin_user = UserId(config.admin_user, config.domain)
         self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
         self.discovery_room_id: RoomId | None = None
@@ -81,7 +80,8 @@ class MatrixASChatter:
     ## Lifecycle
     async def init(self):
         # FIXME this doesn't work
-        # await self.client.set_display_name(self.app_user, ContactName("MeshBot"))
+        # synapse throws an exception in its log
+        # await self.client.set_display_name(self.app_user, DisplayName("MeshBot"))
         if self.config.enable_discovery_room:
             discovery_room_name = self.config.discovery_room_name
             discovery_room_alias = self.create_room_alias(discovery_room_name)
@@ -169,7 +169,7 @@ class MatrixASChatter:
             if check_room(room):
                 return room
         for room_id in await self.client.joined_rooms(as_user_id=source_user_id):
-            room = await self.get_room(room_id)
+            room = await self.get_room(room_id, as_user_id=source_user_id)
             if room.name is not None:
                 continue
             if check_room(room):
@@ -290,13 +290,32 @@ class MatrixASChatter:
             room = self.room_cache.get(room_id)
             if room is not None:
                 room.members[member.user_id] = member
+        if not self.is_app_user(member.user_id):
+            return
         if member.membership == RoomMembership.INVITE:
             # TODO
             #            if member.user_id != self.admin_user:
             await self.client.join_room(room_id, as_user_id=member.user_id)
             if member.is_direct:
-                await self.client.invite_user(room_id, self.app_user, as_user_id=member.user_id)
+                try:
+                    await self.client.invite_user(room_id, self.app_user, as_user_id=member.user_id)
+                except MatrixAPIError as e:
+                    if e.status != 403:  # M_FORBIDDEN: TODO remove
+                        raise
                 await self.client.join_room(room_id)
+
+    def is_app_alias(self, alias: RoomAlias | None) -> bool:
+        if alias is None:
+            return False
+        return alias.startswith(self.config.app_prefix)
+
+    def is_app_user(self, user_id: UserId) -> bool:
+        if user_id.name.startswith(self.config.app_prefix):
+            return True
+        # TODO should i make app_user share app prefix
+        if user_id == self.app_user:
+            return True
+        return False
 
     async def handle_room_message(self, event: MatrixEvent) -> None:
         # m.room.message
@@ -305,10 +324,7 @@ class MatrixASChatter:
         # TODO probably should be display_name
         source = ContactName(str(user_id.name))
         # TODO check if user_id is a AS user not admin
-        if user_id.name.startswith(self.config.app_prefix):
-            return
-        # TODO should i make app_user share app prefix
-        if user_id == self.app_user:
+        if self.is_app_user(user_id):
             return
         room_id = RoomId(event["room_id"])
         room = await self.get_room(room_id)

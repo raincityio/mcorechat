@@ -55,6 +55,12 @@ class MatrixClient:
         data = await self._get(["rooms", room_id, "members"], as_user_id=as_user_id)
         print(data)
 
+    async def set_room_alias(self, room_id: RoomId, alias: RoomAlias):
+        payload = {
+            "room_id": room_id,
+        }
+        await self._put(["directory", "room", alias], payload=payload)
+
     async def get_room_aliases(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         data = await self._get(["rooms", room_id, "aliases"], as_user_id=as_user_id)
         return [parse_room_alias(e) for e in data["aliases"]]
