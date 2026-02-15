@@ -6,8 +6,8 @@ from meshcore.events import Event
 
 from mesh2irc.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
 
-DirectCallback = Callable[[PublicKey, Message, MessageId], Awaitable[None]]
-ChannelCallback = Callable[[ChannelName, Message, MessageId], Awaitable[None]]
+DirectCallback = Callable[[ContactName, PublicKey, Message, MessageId], Awaitable[None]]
+ChannelCallback = Callable[[ContactName, ChannelName, Message, MessageId], Awaitable[None]]
 
 
 class Chatter(Protocol):
@@ -18,13 +18,18 @@ class Chatter(Protocol):
 
     async def update_contact(self, contact: Contact) -> None: ...
 
-    async def update_channel(self, channel_name: ChannelName) -> None: ...
+    async def update_channel(
+        self,
+        channel_name: ChannelName,
+    ) -> None: ...
 
-    async def send_direct(self, source: Contact, message: Message, event: Event) -> None: ...
+    async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None: ...
 
     async def send_channel(
         self, source: ContactName, message: Message, event: Event, channel_name: ChannelName
     ) -> None: ...
+
+    async def send_channel_invite(self, contact_name: ContactName, channel_name: ChannelName) -> None: ...
 
     async def add_direct_callback(self, cb: DirectCallback) -> None: ...
 

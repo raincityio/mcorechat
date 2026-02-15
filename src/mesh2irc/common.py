@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import dataclasses
+import enum
 import json
 from typing import Any
 
@@ -71,10 +72,16 @@ class Channel:
     idx: int
 
 
+class ContactType(enum.IntEnum):
+    CLIENT = 1
+    REPEATER = 2
+
+
 @dataclasses.dataclass(frozen=True)
 class Contact:
     name: ContactName
     public_key: PublicKey
+    type: ContactType
 
 
 class JSONEncoder(json.JSONEncoder):

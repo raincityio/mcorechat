@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import dataclasses
-from pathlib import Path
 from typing import Any
 
 from mesh2irc.common import ChannelName
@@ -22,16 +21,12 @@ class Config:
     discovery_room_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True
     advertisement_room_name: ChannelName = ChannelName("[advertisements]")
-    admin_password: SecretText | None = None
-    admin_password_path: Path | None = None
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
         field_types: dict[str, type] = {
             "domain": DomainName,
             "admin_user": UserName,
-            "admin_password": SecretText,
-            "admin_password_path": Path,
             "homeserver": HomeserverURL,
             "user_password": SecretText,
             "app_user": UserName,

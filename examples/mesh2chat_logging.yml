@@ -27,7 +27,7 @@ root:
 
 loggers:
   mesh2irc:
-    level: DEBUG
+    level: WARNING
 #  nio:
 #    level: WARNING
 

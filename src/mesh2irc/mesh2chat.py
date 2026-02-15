@@ -24,6 +24,7 @@ from mesh2irc.common import (
     ChannelName,
     Message,
     MessageId,
+    ContactType,
 )
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.matrix.app import MatrixASChatter
@@ -106,7 +107,8 @@ class MeshCorePlus:
             for _contact in _contacts.payload.values():
                 _name = ContactName(_contact["adv_name"])
                 _public_key = PublicKey(_contact["public_key"])
-                _cached_contacts.add(Contact(_name, _public_key))
+                _type = _contact["type"]
+                _cached_contacts.add(Contact(_name, _public_key, _type))
             self.cached_contacts = _cached_contacts
         return self.cached_contacts
 
@@ -130,7 +132,7 @@ class MeshCorePlus:
         raise Exception("Missing contact key")
 
 
-async def main_loop(config: Config, mcp: MeshCorePlus, chatter: Chatter):
+async def main_loop(config: Config, self_contact_name: ContactName, mcp: MeshCorePlus, chatter: Chatter):
 
     async def drive_messages():
         while True:
@@ -155,7 +157,7 @@ async def main_loop(config: Config, mcp: MeshCorePlus, chatter: Chatter):
                     logger.warning(f"Unknown contact: {result}")
                 else:
                     message = Message(result.payload["text"])
-                    await chatter.send_direct(contact, message, result)
+                    await chatter.send_direct(contact, self_contact_name, message, result)
             else:
                 raise Exception(f"Unknown message type: {message_type}")
 
@@ -242,7 +244,9 @@ async def amain():
     await chatter.init()
     mcp = MeshCorePlus(meshcore)
 
-    async def channel_callback(channel_name: ChannelName, message: Message, message_id: MessageId):
+    async def channel_callback(source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId):
+        if source != self_contact_name:
+            logger.debug(f"!send message {message} {message_id}")
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise Exception(f"Unknown channel: {channel_name}")
@@ -255,7 +259,11 @@ async def amain():
         else:
             logger.debug(f"!send message {message} {message_id}")
 
-    async def direct_callback(destination: PublicKey, message: Message, message_id: MessageId):
+    async def direct_callback(source: ContactName, destination: PublicKey, message: Message, message_id: MessageId):
+        if source != self_contact_name:
+            print(source)
+            print(self_contact_name)
+            logger.warning(f"!send message {message} {message_id}")
         if len(message) > 156:
             raise Exception(f"Message too long: len[{len(message)}] > {156}")
         if config.enable_send:
@@ -269,10 +277,14 @@ async def amain():
     await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
 
+    self_contact_name = ContactName(meshcore.self_info["name"])
+
     async def seed_contacts():
         async with TaskGroup() as g:
             s = asyncio.Semaphore(8)
             async for contact in mcp.list_contacts():
+                if contact.type != ContactType.CLIENT:
+                    continue
 
                 async def _update_contact(_contact: Contact):
                     async with s:
@@ -280,28 +292,21 @@ async def amain():
 
                 g.create_task(_update_contact(_contact=contact))
 
-    # await seed_contacts()
+    if config.seed_contacts:
+        await seed_contacts()
 
     async def seed_channels():
         async with TaskGroup() as g:
             async for channel in mcp.iter_channels():
                 g.create_task(chatter.update_channel(channel.name))
+                g.create_task(chatter.send_channel_invite(self_contact_name, channel.name))
 
-    # await seed_channels()
+    if config.seed_channels:
+        await seed_channels()
 
     async with TaskGroup() as g:
-        if config.seed_contacts:
-            g.create_task(seed_contacts())
-        if config.seed_channels:
-            g.create_task(seed_channels())
         g.create_task(chatter.run())
-        g.create_task(main_loop(config, mcp, chatter))
-
-        async def commiter():
-            while True:
-                await asyncio.sleep(10)
-
-        g.create_task(commiter())
+        g.create_task(main_loop(config, self_contact_name, mcp, chatter))
 
 
 def main():

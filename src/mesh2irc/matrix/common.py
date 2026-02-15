@@ -51,6 +51,9 @@ class RoomId:
 class UserName:
     value: str
 
+    def startswith(self, prefix: AppPrefix):
+        return self.value.startswith(str(prefix))
+
     def __str__(self):
         return self.value
 

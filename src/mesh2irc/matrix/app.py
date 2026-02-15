@@ -5,7 +5,7 @@ from collections.abc import Callable, Awaitable
 from aiohttp import web
 from aiohttp.web_request import Request
 from meshcore.events import Event
-from nio import AsyncClient, LoginError, RoomInviteError
+from nio import RoomInviteError
 
 from mesh2irc.chatter import DirectCallback, ChannelCallback
 from mesh2irc.common import ContactName, Message, ChannelName, Contact, PublicKey, HTMLMessage
@@ -16,12 +16,12 @@ from mesh2irc.matrix.common import (
     MatrixEvent,
     RoomAlias,
     RoomId,
-    SecretText,
     UserId,
     RoomMember,
     ChannelRoom,
     parse_room_alias,
     RoomMembership,
+    UserName,
 )
 from mesh2irc.matrix.config import Config
 from mesh2irc.matrix.matrix_client import MatrixClient
@@ -40,8 +40,7 @@ class MatrixASChatter:
         self.room_cache: dict[RoomId, ChannelRoom] = {}
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
-        self.admin_user = UserId(config.admin_user, config.domain)
-        self.admin_client = AsyncClient(str(config.homeserver), str(config.admin_user))
+        # self.admin_user = UserId(config.admin_user, config.domain)
         self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, config.app_as_token)
         self.discovery_room_id: RoomId | None = None
@@ -83,15 +82,6 @@ class MatrixASChatter:
     async def init(self):
         # FIXME this doesn't work
         # await self.client.set_display_name(self.app_user, ContactName("MeshBot"))
-        if self.config.admin_password is not None:
-            admin_password = self.config.admin_password
-        elif self.config.admin_password_path is not None:
-            admin_password = SecretText(self.config.admin_password_path.expanduser().read_text().strip())
-        else:
-            raise Exception("Exactly one of admin_password or admin_password_path must be provided")
-        login_resp = await self.admin_client.login(admin_password.value)
-        if type(login_resp) is LoginError:
-            raise Exception(f"Login failed with {login_resp}")
         if self.config.enable_discovery_room:
             discovery_room_name = self.config.discovery_room_name
             discovery_room_alias = self.create_room_alias(discovery_room_name)
@@ -148,6 +138,7 @@ class MatrixASChatter:
     async def update_contact(self, contact: Contact) -> None:
         user_id = self.create_user_id(contact=contact)
         await self.ensure_user(user_id, self.create_display_name(contact=contact))
+        room_ids = await self.client.joined_rooms(as_user_id=user_id)
         if self.discovery_room_id is not None:
             await self.ensure_room_join_membership(self.room_cache[self.discovery_room_id], user_id)
 
@@ -155,28 +146,29 @@ class MatrixASChatter:
         room_alias = self.create_room_alias(room_name=channel_name)
         await self.ensure_room(channel_name, room_alias)
 
-    async def send_direct(self, source: Contact, message: Message, event: Event) -> None:
+    async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None:
         source_user_id = self.create_user_id(contact=source)
+        destination_user_id = UserId(UserName(str(destination)), self.config.domain)
         await self.ensure_user(source_user_id, self.create_display_name(contact=source))
-        room = await self._find_dm_room(source_user_id)
+        room = await self._find_dm_room(source_user_id, destination_user_id)
         if room is None:
             room_id = await self.client.create_direct_room(
-                invite=[self.admin_user, self.app_user],
+                invite=[destination_user_id, self.app_user],
                 as_user_id=source_user_id,
             )
             room = await self.get_room(room_id)
         await self.client.send_message(room.room_id, message, as_user_id=source_user_id)
 
-    async def _find_dm_room(self, user_id: UserId) -> ChannelRoom | None:
+    async def _find_dm_room(self, source_user_id: UserId, destination_user_id: UserId) -> ChannelRoom | None:
         def check_room(_room: ChannelRoom):
-            return _room.is_present(user_id) and _room.is_present(self.admin_user)
+            return _room.is_present(source_user_id) and _room.is_present(destination_user_id)
 
         for room in self.room_cache.values():
             if room.name is not None:
                 continue
             if check_room(room):
                 return room
-        for room_id in await self.client.joined_rooms():
+        for room_id in await self.client.joined_rooms(as_user_id=source_user_id):
             room = await self.get_room(room_id)
             if room.name is not None:
                 continue
@@ -191,8 +183,15 @@ class MatrixASChatter:
         room_id = await self.client.get_room_id_by_alias(room_alias)
         if room_id is not None:
             return await self.get_room(room_id)
-        room_id = await self.client.create_room(room_name, room_alias, invite=[self.admin_user])
+        room_id = await self.client.create_room(room_name, room_alias, invite=[])  # TODO , invite=[self.admin_user])
         return await self.get_room(room_id)
+
+    async def send_channel_invite(self, contact_name: ContactName, channel_name: ChannelName) -> None:
+        room_alias = self.create_room_alias(room_name=channel_name)
+        room = await self.ensure_room(channel_name, room_alias)
+        user_id = UserId(UserName(str(contact_name)), self.config.domain)
+        if user_id not in room.members:
+            await self.client.invite_user(room.room_id, user_id)
 
     async def ensure_user(self, user_id: UserId, display_name: DisplayName) -> None:
         test_display_name = self.user_cache.get(user_id, None)
@@ -292,8 +291,9 @@ class MatrixASChatter:
             if room is not None:
                 room.members[member.user_id] = member
         if member.membership == RoomMembership.INVITE:
-            if member.user_id != self.admin_user:
-                await self.client.join_room(room_id, as_user_id=member.user_id)
+            # TODO
+            #            if member.user_id != self.admin_user:
+            await self.client.join_room(room_id, as_user_id=member.user_id)
             if member.is_direct:
                 await self.client.invite_user(room_id, self.app_user, as_user_id=member.user_id)
                 await self.client.join_room(room_id)
@@ -302,7 +302,13 @@ class MatrixASChatter:
         # m.room.message
         event_id = event["event_id"]
         user_id = self.parse_user_id(event["sender"])
-        if user_id != self.admin_user:
+        # TODO probably should be display_name
+        source = ContactName(str(user_id.name))
+        # TODO check if user_id is a AS user not admin
+        if user_id.name.startswith(self.config.app_prefix):
+            return
+        # TODO should i make app_user share app prefix
+        if user_id == self.app_user:
             return
         room_id = RoomId(event["room_id"])
         room = await self.get_room(room_id)
@@ -310,10 +316,10 @@ class MatrixASChatter:
         # should be a DM room if name is none
         if room.name is None:
             for member in room.members.values():
-                if (member.user_id not in (self.admin_user, self.app_user)) and member.user_id.public_key is not None:
+                if (member.user_id not in (user_id, self.app_user)) and member.user_id.public_key is not None:
                     for cb in self.direct_callbacks:
                         try:
-                            await cb(member.user_id.public_key, message, event_id)
+                            await cb(source, member.user_id.public_key, message, event_id)
                         except Exception as e:
                             await self.client.send_message(
                                 room_id, HTMLMessage(f"<i><b>Failed to send message:</b> {e}</i>")
@@ -322,7 +328,7 @@ class MatrixASChatter:
         else:
             for cb in self.channel_callbacks:
                 try:
-                    await cb(room.name, message, event_id)
+                    await cb(source, room.name, message, event_id)
                 except Exception as e:
                     await self.client.send_message(room_id, HTMLMessage(f"<i><b>Failed to send message:</b> {e}</i>"))
 
