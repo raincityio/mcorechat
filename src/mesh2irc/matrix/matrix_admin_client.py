@@ -30,6 +30,11 @@ class MatrixAdminClient:
     async def close(self):
         await self.session.close()
 
+    # GET /_synapse/admin/v2/users
+    async def list_users(self) -> list[UserId]:
+        params = {"limit": "10000"}
+        return await self._get(["users"], v=2, params=params)
+
     # GET /_synapse/admin/v1/rooms
     async def list_rooms(self) -> list[RoomId]:
         return await self._get(["rooms"])
@@ -60,15 +65,15 @@ class MatrixAdminClient:
         *,
         as_user_id: UserId | None = None,
         payload: dict[str, Any] | None = None,
+        v: int | None = None,
+        params: dict[str, Any] | None = None,
     ) -> Any:
-        if as_user_id is None:
-            params = {}
-        else:
-            params = {
-                "user_id": str(as_user_id),
-            }
+        params = {} if params is None else params
+        if as_user_id is not None:
+            params["user_id"] = str(as_user_id)
         payload = {} if payload is None else payload
-        full_path = ["_synapse", "admin", "v1"] + path
+        v = 1 if v is None else v
+        full_path = ["_synapse", "admin", f"v{v}"] + path
         quoted_path = "/".join(quote(str(e)) for e in full_path)
         url = f"{self.homeserver}/{quoted_path}"
         verbs = {

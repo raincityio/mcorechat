@@ -25,7 +25,8 @@ async def amain():
     subparsers = parser.add_subparsers(dest="command")
     subparser = subparsers.add_parser("delete-room")
     subparser.add_argument("--room-id", required=True)
-    subparser = subparsers.add_parser("list-rooms")
+    subparsers.add_parser("list-rooms")
+    subparsers.add_parser("list-users")
     args = parser.parse_args()
 
     async def get_admin_client():
@@ -45,6 +46,9 @@ async def amain():
     elif args.command == "list-rooms":
         admin_client = await get_admin_client()
         jout(await admin_client.list_rooms())
+    elif args.command == "list-users":
+        admin_client = await get_admin_client()
+        jout(await admin_client.list_users())
     else:
         raise Exception(f"Unknown command: {args.command}")
 
