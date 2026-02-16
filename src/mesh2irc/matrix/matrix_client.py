@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from mesh2irc.common import ChannelName, HTMLMessage, Message
+from mesh2irc.common import HTMLMessage, Message
 from mesh2irc.matrix.common import (
     HomeserverURL,
     SecretText,
@@ -17,6 +17,7 @@ from mesh2irc.matrix.common import (
     DisplayName,
     RoomVisibility,
     parse_room_alias,
+    RoomName,
 )
 from mesh2irc.matrix.htmlutils import strip_html
 
@@ -83,7 +84,7 @@ class MatrixClient:
         return [RoomId(e) for e in data["joined_rooms"]]
 
     async def create_room(
-        self, room_name: ChannelName, room_alias: RoomAlias, *, invite: list[UserId] | None = None
+        self, room_name: RoomName, room_alias: RoomAlias, *, invite: list[UserId] | None = None
     ) -> RoomId:
         payload: dict[str, Any] = {
             "name": room_name,
@@ -160,6 +161,11 @@ class MatrixClient:
     ):
         payload = {"user_id": user_id}
         await self._post(["rooms", room_id, "invite"], payload=payload, as_user_id=as_user_id)
+
+    # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.name
+    async def set_room_name(self, room_id: RoomId, name: RoomName):
+        payload = {"name": name}
+        return await self._put(["rooms", room_id, "state", "m.room.name"], payload=payload)
 
     async def get_room_state(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         return await self._get(["rooms", room_id, "state"], as_user_id=as_user_id)

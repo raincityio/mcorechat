@@ -16,9 +16,9 @@ class Config:
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     trusted_suffix: str | None = " [trusted]"
     enable_discovery_room: bool = True
-    discovery_room_name: ChannelName = ChannelName("[discovery]")
+    discovery_channel_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True
-    advertisement_room_name: ChannelName = ChannelName("[advertisements]")
+    advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":

@@ -1,0 +1,4 @@
+catch exceptions in loops and add retries
+* prevent exit of application when synapse isn't reachable
+
+add command channel

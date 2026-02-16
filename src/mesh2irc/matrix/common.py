@@ -40,6 +40,14 @@ class DisplayName:
 
 
 @dataclasses.dataclass(frozen=True)
+class RoomName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
 class RoomId:
     value: str
 
@@ -163,7 +171,7 @@ class RoomMember:
 @dataclasses.dataclass
 class ChannelRoom:
     room_id: RoomId
-    name: ChannelName | None = None
+    name: RoomName | None = None
     members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
     alias: RoomAlias | None = None
 
@@ -183,7 +191,7 @@ class MatrixAPIError(Exception):
 
 class MatrixJSONEncoder(CommonJSONEncoder):
     def default(self, o: Any) -> Any:
-        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId):
+        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName):
             return str(o)
         return super().default(o)
 
