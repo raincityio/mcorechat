@@ -148,7 +148,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
                 if channel is None:
                     logger.warning(f"Unknown channel: {result}")
                 else:
-                    await chatter.send_channel(self_contact, contact_name, message, result, channel.name)
+                    await chatter.send_channel(self_contact.public_key, contact_name, message, result, channel.name)
             elif message_type == "PRIV":
                 public_key_prefix = PublicKeyPrefix(result.payload["pubkey_prefix"])
                 contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
@@ -182,7 +182,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         else:
             advertise = config.advertise_known
         if advertise:
-            await chatter.advertise(self_contact, public_key, contact=contact)
+            await chatter.advertise(self_contact.public_key, public_key, contact=contact)
 
     mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_advertisement)
 
@@ -247,9 +247,10 @@ async def amain():
     mcp = MeshCorePlus(meshcore)
 
     async def channel_callback(
-        identity: Contact, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
+        identity: PublicKey, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
     ):
         if source != self_contact_name:
+            # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
             return
         channel = await mcp.get_channel(name=channel_name)
@@ -264,8 +265,11 @@ async def amain():
         else:
             logger.debug(f"!send message {message} {message_id}")
 
-    async def direct_callback(source: ContactName, destination: PublicKey, message: Message, message_id: MessageId):
+    async def direct_callback(
+        identity: PublicKey, source: ContactName, destination: PublicKey, message: Message, message_id: MessageId
+    ):
         if source != self_contact_name:
+            # FIXME illegal state
             logger.warning(f"!send message {message} {message_id}")
             return
         if len(message) > 156:
@@ -278,8 +282,7 @@ async def amain():
         else:
             logger.debug(f"!send message {message} {message_id}")
 
-    # await chatter.add_channel_callback(channel_callback)
-    await chatter.add_direct_callback(direct_callback)
+    await chatter.add_direct_callback(self_contact.public_key, self_contact_name, direct_callback)
 
     async def seed_contacts():
         async with TaskGroup() as g:
@@ -298,7 +301,9 @@ async def amain():
         await seed_contacts()
 
     async for channel in mcp.iter_channels():
-        await chatter.add_channel_callback(self_contact, channel.name, channel_callback)
+        await chatter.add_channel_callback(
+            self_contact.public_key, channel.name, channel_callback, invitees=[self_contact.name]
+        )
 
     async with TaskGroup() as g:
         g.create_task(chatter.run())

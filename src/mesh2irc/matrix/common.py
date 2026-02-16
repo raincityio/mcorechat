@@ -21,7 +21,7 @@ class HomeserverURL:
 
 
 @dataclasses.dataclass(frozen=True)
-class AppPrefix:
+class AppNamespace:
     value: str
 
     def __str__(self):
@@ -51,8 +51,8 @@ class RoomId:
 class UserName:
     value: str
 
-    def startswith(self, prefix: AppPrefix):
-        return self.value.startswith(str(prefix))
+    def startswith(self, namespace: AppNamespace):
+        return self.value.startswith(str(namespace))
 
     def __str__(self):
         return self.value
@@ -97,12 +97,11 @@ class RoomAlias:
         return f"#{self.name}:{self.domain}"
 
     @staticmethod
-    def from_name(identity: Contact, name: ChannelName, domain: DomainName, *, prefix: AppPrefix | None = None):
-        prefix_str = "" if prefix is None else str(prefix)
-        return RoomAlias(ChannelName(f"{prefix_str}.{identity.public_key}.{name}"), domain)
+    def from_name(app_namespace: AppNamespace, identity: PublicKey, name: ChannelName, domain: DomainName):
+        return RoomAlias(ChannelName(f"{app_namespace}.{identity}.{name}"), domain)
 
-    def startswith(self, prefix: AppPrefix):
-        return str(self.name).startswith(str(prefix))
+    def startswith(self, app_namespace: AppNamespace):
+        return str(self.name).startswith(str(app_namespace))
 
 
 def parse_room_alias(raw: str):
@@ -121,28 +120,25 @@ class UserId:
         return f"@{self.name}:{self.domain}"
 
     @staticmethod
-    def create_from_contact(contact: Contact, domain: DomainName, *, prefix: AppPrefix | None = None):
-        prefix_str = "" if prefix is None else str(prefix)
-        user_name = UserName(f"{prefix_str}t_{contact.public_key}")
+    def create_from_contact(app_namespace: AppNamespace, contact: Contact, domain: DomainName):
+        user_name = UserName(f"{app_namespace}.t_{contact.public_key}")
         return UserId(user_name, domain, contact.public_key)
 
     @staticmethod
-    def create_from_contact_name(contact_name: ContactName, domain: DomainName, *, prefix: AppPrefix | None = None):
-        prefix_str = "" if prefix is None else str(prefix)
-        user_name = UserName(f"{prefix_str}u_{sha256(str(contact_name))}")
+    def create_from_contact_name(app_namespace: AppNamespace, contact_name: ContactName, domain: DomainName):
+        user_name = UserName(f"{app_namespace}.u_{sha256(str(contact_name))}")
         return UserId(user_name, domain)
 
 
-def parse_user_id(app_prefix: AppPrefix, raw: str):
-    mesh_user_id_start = f"@{app_prefix}"
-    if raw.startswith(mesh_user_id_start):
-        prefixed_raw_user, raw_domain = raw[1:].split(":", 1)
-        raw_user = prefixed_raw_user[len(app_prefix) :]
+def parse_user_id(app_namespace: AppNamespace, raw: str):
+    if raw.startswith(f"@{app_namespace}."):
+        namespaced_raw_user, raw_domain = raw[1:].split(":", 1)
+        raw_user = namespaced_raw_user[len(app_namespace) + 1 :]
         if raw_user.startswith("t_"):
             public_key = PublicKey(raw_user[2:])
-            return UserId(UserName(prefixed_raw_user), DomainName(raw_domain), public_key)
+            return UserId(UserName(namespaced_raw_user), DomainName(raw_domain), public_key)
         elif raw_user.startswith("u_"):
-            return UserId(UserName(prefixed_raw_user), DomainName(raw_domain), None)
+            return UserId(UserName(namespaced_raw_user), DomainName(raw_domain), None)
         else:
             raise Exception(f"Invalid mesh user ID: {raw_user}")
     else:

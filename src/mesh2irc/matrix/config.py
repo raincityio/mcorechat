@@ -3,7 +3,7 @@ import dataclasses
 from typing import Any
 
 from mesh2irc.common import ChannelName
-from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppPrefix
+from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppNamespace
 
 
 @dataclasses.dataclass(frozen=True)
@@ -13,7 +13,7 @@ class Config:
     app_user: UserName
     app_as_token: SecretText
     app_hs_token: SecretText
-    app_prefix: AppPrefix
+    app_namespace: AppNamespace
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
     user_password: SecretText = SecretText("password")
     trusted_suffix: str | None = " [trusted]"
@@ -32,7 +32,7 @@ class Config:
             "app_user": UserName,
             "app_as_token": SecretText,
             "app_hs_token": SecretText,
-            "app_prefix": AppPrefix,
+            "app_namespace": AppNamespace,
             "discovery_room_name": ChannelName,
             "advertisement_room_name": ChannelName,
         }
