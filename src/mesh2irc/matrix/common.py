@@ -169,7 +169,7 @@ class RoomMember:
 
 
 @dataclasses.dataclass
-class ChannelRoom:
+class Room:
     room_id: RoomId
     name: RoomName | None = None
     members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
