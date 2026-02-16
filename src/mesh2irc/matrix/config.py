@@ -9,13 +9,11 @@ from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserNa
 @dataclasses.dataclass(frozen=True)
 class Config:
     domain: DomainName
-    admin_user: UserName
     app_user: UserName
     app_as_token: SecretText
     app_hs_token: SecretText
     app_namespace: AppNamespace
     homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
-    user_password: SecretText = SecretText("password")
     trusted_suffix: str | None = " [trusted]"
     enable_discovery_room: bool = True
     discovery_room_name: ChannelName = ChannelName("[discovery]")
@@ -26,9 +24,7 @@ class Config:
     def from_data(data: dict[str, Any]) -> "Config":
         field_types: dict[str, type] = {
             "domain": DomainName,
-            "admin_user": UserName,
             "homeserver": HomeserverURL,
-            "user_password": SecretText,
             "app_user": UserName,
             "app_as_token": SecretText,
             "app_hs_token": SecretText,

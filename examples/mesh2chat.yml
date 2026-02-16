@@ -6,10 +6,6 @@ matrix:
   homeserver: "http://polaris.elisha.raincity.io:8008"
   #  homeserver: "http://localhost:8008"
   domain: example.com
-  admin_user: drew
-  #  admin_password: password
-  #  admin_password_path: ~/mesh2chat_password
-
   app_user: examplebot
   app_as_token: AS_SUPER_SECRET_TOKEN
   app_hs_token: HS_SUPER_SECRET_TOKEN

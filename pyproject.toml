@@ -24,6 +24,7 @@ irc-server = "mesh2irc.irc.server:main"
 matrix-bridge = "mesh2irc.matrix.bridge:main"
 matrix-new-user = "mesh2irc.matrix.new_user:main"
 matrix-app = "mesh2irc.matrix.app:main"
+matrix-admin-cli = "mesh2irc.matrix.admincli:main"
 
 [tool.black]
 line-length = 120
