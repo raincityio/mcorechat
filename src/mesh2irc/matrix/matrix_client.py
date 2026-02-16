@@ -37,6 +37,13 @@ class MatrixClient:
     async def close(self):
         await self.session.close()
 
+    async def get_display_name(self, user_id: UserId) -> DisplayName | None:
+        data = await self._get(["profile", user_id, "displayname"], as_user_id=user_id)
+        raw_display_name = data.get("displayname", None)
+        if (raw_display_name is None) or (raw_display_name == ""):
+            return None
+        return DisplayName(raw_display_name)
+
     async def set_display_name(self, user_id: UserId, display_name: DisplayName) -> None:
         payload = {
             "displayname": display_name,
@@ -75,12 +82,14 @@ class MatrixClient:
         data = await self._get(["joined_rooms"], as_user_id=as_user_id)
         return [RoomId(e) for e in data["joined_rooms"]]
 
-    async def create_room(self, room_name: ChannelName, room_alias: RoomAlias, invite: list[UserId]):
+    async def create_room(
+        self, room_name: ChannelName, room_alias: RoomAlias, *, invite: list[UserId] | None = None
+    ) -> RoomId:
         payload: dict[str, Any] = {
             "name": room_name,
             "room_alias_name": room_alias.name,
             "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
-            "invite": [e for e in invite],
+            "invite": [] if invite is None else [e for e in invite],
             "preset": "public_chat",  # default preset
         }
 

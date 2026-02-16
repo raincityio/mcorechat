@@ -247,6 +247,7 @@ async def amain():
     async def channel_callback(source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId):
         if source != self_contact_name:
             logger.debug(f"!send message {message} {message_id}")
+            return
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise Exception(f"Unknown channel: {channel_name}")
@@ -261,9 +262,8 @@ async def amain():
 
     async def direct_callback(source: ContactName, destination: PublicKey, message: Message, message_id: MessageId):
         if source != self_contact_name:
-            print(source)
-            print(self_contact_name)
             logger.warning(f"!send message {message} {message_id}")
+            return
         if len(message) > 156:
             raise Exception(f"Message too long: len[{len(message)}] > {156}")
         if config.enable_send:
