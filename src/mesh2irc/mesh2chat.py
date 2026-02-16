@@ -132,7 +132,7 @@ class MeshCorePlus:
         raise Exception("Missing contact key")
 
 
-async def main_loop(config: Config, self_contact_name: ContactName, mcp: MeshCorePlus, chatter: Chatter):
+async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, chatter: Chatter):
 
     async def drive_messages():
         while True:
@@ -148,7 +148,7 @@ async def main_loop(config: Config, self_contact_name: ContactName, mcp: MeshCor
                 if channel is None:
                     logger.warning(f"Unknown channel: {result}")
                 else:
-                    await chatter.send_channel(contact_name, message, result, channel.name)
+                    await chatter.send_channel(self_contact, contact_name, message, result, channel.name)
             elif message_type == "PRIV":
                 public_key_prefix = PublicKeyPrefix(result.payload["pubkey_prefix"])
                 contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
@@ -157,7 +157,7 @@ async def main_loop(config: Config, self_contact_name: ContactName, mcp: MeshCor
                     logger.warning(f"Unknown contact: {result}")
                 else:
                     message = Message(result.payload["text"])
-                    await chatter.send_direct(contact, self_contact_name, message, result)
+                    await chatter.send_direct(contact, self_contact.name, message, result)
             else:
                 raise Exception(f"Unknown message type: {message_type}")
 
@@ -182,7 +182,7 @@ async def main_loop(config: Config, self_contact_name: ContactName, mcp: MeshCor
         else:
             advertise = config.advertise_known
         if advertise:
-            await chatter.advertise(public_key, contact=contact)
+            await chatter.advertise(self_contact, public_key, contact=contact)
 
     mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_advertisement)
 
@@ -240,11 +240,15 @@ async def amain():
     logger.debug(f"Config: {config}")
 
     meshcore = await get_meshcore(config.meshcore, main_task)
+    self_contact_name = ContactName(meshcore.self_info["name"])
+    self_contact = Contact(self_contact_name, PublicKey(meshcore.self_info["public_key"]), ContactType.CLIENT)
     chatter: Chatter = MatrixASChatter(config.matrix)
-    await chatter.init()
+    await chatter.init(self_contact)
     mcp = MeshCorePlus(meshcore)
 
-    async def channel_callback(source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId):
+    async def channel_callback(
+        identity: Contact, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
+    ):
         if source != self_contact_name:
             logger.debug(f"!send message {message} {message_id}")
             return
@@ -274,10 +278,8 @@ async def amain():
         else:
             logger.debug(f"!send message {message} {message_id}")
 
-    await chatter.add_channel_callback(channel_callback)
+    # await chatter.add_channel_callback(channel_callback)
     await chatter.add_direct_callback(direct_callback)
-
-    self_contact_name = ContactName(meshcore.self_info["name"])
 
     async def seed_contacts():
         async with TaskGroup() as g:
@@ -295,18 +297,12 @@ async def amain():
     if config.seed_contacts:
         await seed_contacts()
 
-    async def seed_channels():
-        async with TaskGroup() as g:
-            async for channel in mcp.iter_channels():
-                g.create_task(chatter.update_channel(channel.name))
-                g.create_task(chatter.send_channel_invite(self_contact_name, channel.name))
-
-    if config.seed_channels:
-        await seed_channels()
+    async for channel in mcp.iter_channels():
+        await chatter.add_channel_callback(self_contact, channel.name, channel_callback)
 
     async with TaskGroup() as g:
         g.create_task(chatter.run())
-        g.create_task(main_loop(config, self_contact_name, mcp, chatter))
+        g.create_task(main_loop(config, self_contact, mcp, chatter))
 
 
 def main():

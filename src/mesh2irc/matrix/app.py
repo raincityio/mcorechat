@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Callable, Awaitable
 
@@ -30,12 +31,19 @@ type EventHandler = Callable[[MatrixEvent], Awaitable[None]]
 logger = logging.getLogger(__name__)
 
 
+@dataclasses.dataclass(frozen=True)
+class ChannelCallback2:
+    identity: Contact
+    channel_name: ChannelName
+    cb: ChannelCallback
+
+
 class MatrixASChatter:
 
     def __init__(self, config: Config) -> None:
         self.config = config
         self.direct_callbacks = list[DirectCallback]()
-        self.channel_callbacks = list[ChannelCallback]()
+        self.channel_callbacks = dict[RoomAlias, ChannelCallback2]()
         self.room_cache: dict[RoomId, ChannelRoom] = {}
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
@@ -64,8 +72,8 @@ class MatrixASChatter:
     def parse_user_id(self, raw: str):
         return common.parse_user_id(self.config.app_prefix, raw)
 
-    def create_room_alias(self, room_name: ChannelName):
-        return RoomAlias.from_name(room_name, self.config.domain, prefix=self.config.app_prefix)
+    def create_room_alias(self, identity: Contact, room_name: ChannelName):
+        return RoomAlias.from_name(identity, room_name, self.config.domain, prefix=self.config.app_prefix)
 
     def create_display_name(self, *, contact_name: ContactName | None = None, contact: Contact | None = None):
         match (contact_name, contact):
@@ -77,13 +85,13 @@ class MatrixASChatter:
                 raise Exception("Exactly one of contact_name or contact must be provided")
 
     ## Lifecycle
-    async def init(self):
+    async def init(self, identity: Contact) -> None:
         # FIXME this doesn't work
         # synapse throws an exception in its log
         # await self.client.set_display_name(self.app_user, DisplayName("MeshBot"))
         if self.config.enable_discovery_room:
             discovery_room_name = self.config.discovery_room_name
-            discovery_room_alias = self.create_room_alias(discovery_room_name)
+            discovery_room_alias = self.create_room_alias(identity, discovery_room_name)
             discovery_room = await self.ensure_room(discovery_room_name, discovery_room_alias)
             self.discovery_room_id = discovery_room.room_id
             for member in discovery_room.members.values():
@@ -91,11 +99,13 @@ class MatrixASChatter:
                     DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
                 )
                 self.user_cache[member.user_id] = display_name
+            await self.send_channel_invite(identity, discovery_room_name)
         if self.config.enable_advertisement_room:
             advertisement_room_name = self.config.advertisement_room_name
-            advertisement_room_alias = self.create_room_alias(advertisement_room_name)
+            advertisement_room_alias = self.create_room_alias(identity, advertisement_room_name)
             advertisement_room = await self.ensure_room(advertisement_room_name, advertisement_room_alias)
             self.advertisement_room_id = advertisement_room.room_id
+            await self.send_channel_invite(identity, advertisement_room_name)
 
     async def run(self):
         app = web.Application()
@@ -120,7 +130,7 @@ class MatrixASChatter:
         logger.debug(f"Started server on {9000}")
 
     ## Interface
-    async def advertise(self, public_key: PublicKey, *, contact: Contact | None = None) -> None:
+    async def advertise(self, identity: Contact, public_key: PublicKey, *, contact: Contact | None = None) -> None:
         if self.config.enable_advertisement_room:
             assert self.advertisement_room_id is not None
             message = Message(str(public_key))
@@ -140,9 +150,9 @@ class MatrixASChatter:
         if self.discovery_room_id is not None:
             await self.ensure_room_join_membership(self.room_cache[self.discovery_room_id], user_id)
 
-    async def update_channel(self, channel_name: ChannelName) -> None:
-        room_alias = self.create_room_alias(room_name=channel_name)
-        await self.ensure_room(channel_name, room_alias)
+    # async def update_channel(self, contact: Contact, channel_name: ChannelName) -> None:
+    #     room_alias = self.create_room_alias(room_name=channel_name)
+    #     await self.ensure_room(channel_name, room_alias)
 
     async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None:
         source_user_id = self.create_user_id(contact=source)
@@ -183,10 +193,10 @@ class MatrixASChatter:
             room_id = await self.client.create_room(room_name, room_alias)
         return await self.get_room(room_id)
 
-    async def send_channel_invite(self, contact_name: ContactName, channel_name: ChannelName) -> None:
-        room_alias = self.create_room_alias(room_name=channel_name)
+    async def send_channel_invite(self, identity: Contact, channel_name: ChannelName) -> None:
+        room_alias = self.create_room_alias(identity, channel_name)
         room = await self.ensure_room(channel_name, room_alias)
-        user_id = UserId(UserName(str(contact_name)), self.config.domain)
+        user_id = UserId(UserName(str(identity.name)), self.config.domain)
         if user_id not in room.members:
             try:
                 await self.client.invite_user(room.room_id, user_id)
@@ -228,9 +238,9 @@ class MatrixASChatter:
                     raise Exception(f"Unknown membership: {room_member.membership}")
 
     async def send_channel(
-        self, source: ContactName, message: Message, event: Event, channel_name: ChannelName
+        self, identity: Contact, source: ContactName, message: Message, event: Event, channel_name: ChannelName
     ) -> None:
-        room_alias = self.create_room_alias(channel_name)
+        room_alias = self.create_room_alias(identity, channel_name)
         room = await self.ensure_room(channel_name, room_alias)
         source_user_id = self.create_user_id(contact_name=source)
         if source_user_id not in room.members:
@@ -241,8 +251,11 @@ class MatrixASChatter:
     async def add_direct_callback(self, cb: DirectCallback) -> None:
         self.direct_callbacks.append(cb)
 
-    async def add_channel_callback(self, cb: ChannelCallback) -> None:
-        self.channel_callbacks.append(cb)
+    async def add_channel_callback(self, identity: Contact, channel_name: ChannelName, cb: ChannelCallback) -> None:
+        room_alias = self.create_room_alias(identity, channel_name)
+        await self.ensure_room(channel_name, room_alias)
+        await self.send_channel_invite(identity, channel_name)
+        self.channel_callbacks[room_alias] = ChannelCallback2(identity, channel_name, cb)
 
     def _parse_event_content(self, event: MatrixEvent, key: str) -> str | None:
         value = event.get("content", {}).get(key, None)
@@ -361,11 +374,12 @@ class MatrixASChatter:
         message = Message(event["content"]["body"])
         if self.is_app_room_alias(room.alias):
             assert room.name is not None
-            for cb in self.channel_callbacks:
-                try:
-                    await cb(source, room.name, message, event_id)
-                except Exception as e:
-                    await self.send_error(room_id, "Failed to send message", cause=str(e))
+            assert room.alias is not None
+            cb = self.channel_callbacks[room.alias]
+            try:
+                await cb.cb(cb.identity, source, room.name, message, event_id)
+            except Exception as e:
+                await self.send_error(room_id, "Failed to send message", cause=str(e))
         else:
             for member in room.members.values():
                 if self.is_app_user_id(member.user_id) and self.is_direct_member(member):

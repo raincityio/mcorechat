@@ -97,9 +97,9 @@ class RoomAlias:
         return f"#{self.name}:{self.domain}"
 
     @staticmethod
-    def from_name(name: ChannelName, domain: DomainName, *, prefix: AppPrefix | None = None):
+    def from_name(identity: Contact, name: ChannelName, domain: DomainName, *, prefix: AppPrefix | None = None):
         prefix_str = "" if prefix is None else str(prefix)
-        return RoomAlias(ChannelName(f"{prefix_str}{name}"), domain)
+        return RoomAlias(ChannelName(f"{prefix_str}.{identity.public_key}.{name}"), domain)
 
     def startswith(self, prefix: AppPrefix):
         return str(self.name).startswith(str(prefix))
