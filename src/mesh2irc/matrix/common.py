@@ -170,7 +170,7 @@ class RoomMember:
 
 @dataclasses.dataclass
 class Room:
-    room_id: RoomId
+    id: RoomId
     name: RoomName | None = None
     members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
     alias: RoomAlias | None = None

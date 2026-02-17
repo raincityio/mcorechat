@@ -106,7 +106,7 @@ class MatrixASChatter:
             discovery_room_name = self.create_room_name(discovery_channel_name)
             discovery_room_alias = self.create_room_alias(contact.public_key, discovery_channel_name)
             discovery_room = await self.ensure_room(discovery_room_name, discovery_room_alias)
-            self.discovery_room_id = discovery_room.room_id
+            self.discovery_room_id = discovery_room.id
             for member in discovery_room.members.values():
                 display_name = (
                     DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
@@ -118,7 +118,7 @@ class MatrixASChatter:
             advertisement_room_name = self.create_room_name(advertisement_channel_name)
             advertisement_room_alias = self.create_room_alias(contact.public_key, advertisement_channel_name)
             advertisement_room = await self.ensure_room(advertisement_room_name, advertisement_room_alias)
-            self.advertisement_room_id = advertisement_room.room_id
+            self.advertisement_room_id = advertisement_room.id
             await self.send_channel_invite(contact.public_key, advertisement_channel_name, [contact.name])
 
     async def run(self):
@@ -163,7 +163,7 @@ class MatrixASChatter:
                 await self.ensure_user(user_id, display_name)
                 room = await self.get_room(self.advertisement_room_id)
                 await self.ensure_room_join_membership(room, user_id)
-                await self.client.send_message(room.room_id, message, as_user_id=user_id)
+                await self.client.send_message(room.id, message, as_user_id=user_id)
 
     async def update_contact(self, contact: Contact) -> None:
         user_id = self.create_user_id(contact=contact)
@@ -186,7 +186,7 @@ class MatrixASChatter:
                 as_user_id=source_user_id,
             )
             room = await self.get_room(room_id)
-        await self.client.send_message(room.room_id, message, as_user_id=source_user_id)
+        await self.client.send_message(room.id, message, as_user_id=source_user_id)
 
     async def _find_dm_room(self, source_user_id: UserId, destination_user_id: UserId) -> Room | None:
         def check_room(_room: Room):
@@ -209,7 +209,7 @@ class MatrixASChatter:
         room = next(filter(lambda x: room_alias == x.alias, self.room_cache.values()), None)
         if room is not None:
             if room.name != room_name:
-                await self.client.set_room_name(room.room_id, room_name)
+                await self.client.set_room_name(room.id, room_name)
             return room
         room_id = await self.client.get_room_id_by_alias(room_alias)
         if room_id is None:
@@ -226,7 +226,7 @@ class MatrixASChatter:
             user_id = UserId(UserName(str(invitee)), self.config.domain)
             if user_id not in room.members:
                 try:
-                    await self.client.invite_user(room.room_id, user_id)
+                    await self.client.invite_user(room.id, user_id)
                 except MatrixAPIError as e:
                     if e.status != 403:
                         raise
@@ -250,17 +250,17 @@ class MatrixASChatter:
         room_member = room.members.get(user_id)
         if room_member is None:
             try:
-                await self.client.invite_user(room.room_id, user_id)
+                await self.client.invite_user(room.id, user_id)
             except MatrixAPIError as e:
                 if e.status != 403:
                     raise
-            await self.client.join_room(room.room_id, as_user_id=user_id)
+            await self.client.join_room(room.id, as_user_id=user_id)
         else:
             match room_member.membership:
                 case RoomMembership.JOIN:
                     pass
                 case RoomMembership.INVITE:
-                    await self.client.join_room(room.room_id, as_user_id=user_id)
+                    await self.client.join_room(room.id, as_user_id=user_id)
                 case _:
                     raise Exception(f"Unknown membership: {room_member.membership}")
 
@@ -274,7 +274,7 @@ class MatrixASChatter:
         if source_user_id not in room.members:
             await self.ensure_user(source_user_id, self.create_display_name(contact_name=source))
             await self.ensure_room_join_membership(room, source_user_id)
-        await self.client.send_message(room.room_id, message, as_user_id=source_user_id)
+        await self.client.send_message(room.id, message, as_user_id=source_user_id)
 
     async def add_direct_callback(self, identity: PublicKey, source: ContactName, cb: DirectCallback) -> None:
         assert source not in self.direct_callbacks
