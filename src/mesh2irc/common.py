@@ -107,3 +107,11 @@ class JSONEncoder(json.JSONEncoder):
 
 def jdump(o: Any):
     return json.dumps(o, cls=JSONEncoder)
+
+
+def backoff_iter():
+    schedule = [1, 1, 1, 1, 2, 2, 4, 8]
+    for i in range(len(schedule)):
+        yield schedule[i]
+    while True:
+        yield schedule[-1]

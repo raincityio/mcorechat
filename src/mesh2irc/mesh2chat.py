@@ -6,7 +6,7 @@ import logging
 import logging.config
 import signal
 from argparse import ArgumentParser
-from asyncio import Task, TaskGroup, AbstractEventLoop
+from asyncio import Future, Task, TaskGroup, AbstractEventLoop
 from pathlib import Path
 from typing import Any, Optional
 
@@ -26,11 +26,26 @@ from mesh2irc.common import (
     Message,
     MessageId,
     ContactType,
+    backoff_iter,
 )
 from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mesh2irc.matrix.app import MatrixASChatter
 
 logger = logging.getLogger(__name__)
+
+MAXISH_MESSAGE_LENGTH = 156
+MAX_CHANNELS = 40
+
+
+class MeshcoreError(Exception):
+    def __init__(self, msg: str, event: Event):
+        self.event = event
+        super().__init__(f"{msg}: {event}")
+
+
+class InvalidRequestException(Exception):
+    def __init__(self, msg: str):
+        super().__init__(msg)
 
 
 async def get_meshcore(config: MeshCoreConfig, task: Task[Any]):
@@ -60,61 +75,53 @@ async def get_meshcore(config: MeshCoreConfig, task: Task[Any]):
 class MeshCorePlus:
     def __init__(self, meshcore: MeshCore):
         self.meshcore = meshcore
-        self.cached_contacts: Optional[set[Contact]] = None
-        self.channels = set[Channel]()
+        self.contact_cache: dict[PublicKey, Contact] | None = None
+        self.channel_cache: dict[int, Channel] | None = None
+
+    async def _get_channels(self):
+        if self.channel_cache is None:
+            channel_cache: dict[int, Channel] = {}
+            for idx in range(MAX_CHANNELS):
+                mc_channel = await self.meshcore.commands.get_channel(idx)
+                if mc_channel.type == EventType.ERROR:
+                    raise MeshcoreError(f"get_channel({idx})", mc_channel)
+                channel_name_raw = mc_channel.payload["channel_name"]
+                if channel_name_raw != "":
+                    channel = Channel(ChannelName(channel_name_raw), mc_channel.payload["channel_idx"])
+                    channel_cache[idx] = channel
+            self.channel_cache = channel_cache
+        return self.channel_cache
 
     async def iter_channels(self):
-        for i in range(40):
-            channel = await self.get_channel(idx=i)
-            if channel is None:
-                continue
+        for channel in (await self._get_channels()).values():
             yield channel
 
     async def get_channel(self, *, idx: Optional[int] = None, name: Optional[ChannelName] = None):
+        channels = await self._get_channels()
+        match (idx, name):
+            case (int(), None):
+                return channels.get(idx, None)
+            case (None, ChannelName()):
+                return next(filter(lambda x: x.name == name, channels.values()), None)
+            case _:
+                raise Exception(f"one of idx or name required")
 
-        async def get_channel_by_idx(_idx: int):
-            _found = next(filter(lambda x: x.idx == _idx, self.channels), None)
-            if _found is not None:
-                return _found
-            _channel = await self.meshcore.commands.get_channel(_idx)
-            if _channel.type == EventType.ERROR:
-                raise Exception(f"get_channel({_idx}) error: {_channel}")
-            _channel_name_raw = _channel.payload["channel_name"]
-            if _channel_name_raw == "":
-                return None
-            _channel = Channel(ChannelName(_channel_name_raw), _channel.payload["channel_idx"])
-            self.channels.add(_channel)
-            return _channel
+    async def _get_contacts(self):
+        if self.contact_cache is None:
+            contact_cache: dict[PublicKey, Contact] = {}
+            contacts = await self.meshcore.commands.get_contacts()
+            if contacts.type == EventType.ERROR:
+                raise MeshcoreError(f"get_contacts", contacts)
+            for _contact in contacts.payload.values():
+                name = ContactName(_contact["adv_name"])
+                public_key = PublicKey(_contact["public_key"])
+                type = _contact["type"]
+                contact_cache[public_key] = Contact(name, public_key, type)
+            self.contact_cache = contact_cache
+        return self.contact_cache
 
-        if idx is not None:
-            return await get_channel_by_idx(idx)
-        elif name is not None:
-            found = next(filter(lambda x: x.name == name, self.channels), None)
-            if found is not None:
-                return found
-            for i in range(40):
-                channel = await get_channel_by_idx(i)
-                if (channel is not None) and (channel.name == name):
-                    return channel
-            return None
-        raise Exception("Missing channel key")
-
-    async def get_contacts(self):
-        if self.cached_contacts is None:
-            _cached_contacts: set[Contact] = set()
-            _contacts = await self.meshcore.commands.get_contacts()
-            if _contacts.type == EventType.ERROR:
-                raise Exception(f"get_contacts error: {_contacts}")
-            for _contact in _contacts.payload.values():
-                _name = ContactName(_contact["adv_name"])
-                _public_key = PublicKey(_contact["public_key"])
-                _type = _contact["type"]
-                _cached_contacts.add(Contact(_name, _public_key, _type))
-            self.cached_contacts = _cached_contacts
-        return self.cached_contacts
-
-    async def list_contacts(self):
-        for contact in await self.get_contacts():
+    async def iter_contacts(self):
+        for contact in (await self._get_contacts()).values():
             yield contact
 
     async def get_contact(
@@ -124,21 +131,28 @@ class MeshCorePlus:
         public_key: Optional[PublicKey] = None,
         public_key_prefix: Optional[PublicKeyPrefix] = None,
     ) -> Optional[Contact]:
-        if name is not None:
-            return next(filter(lambda x: x.name == name, await self.get_contacts()), None)
-        elif public_key is not None:
-            return next(filter(lambda x: x.public_key == public_key, await self.get_contacts()), None)
-        elif public_key_prefix is not None:
-            return next(filter(lambda x: x.public_key.startswith(public_key_prefix), await self.get_contacts()), None)
-        raise Exception("Missing contact key")
+        contacts = await self._get_contacts()
+        match (name, public_key, public_key_prefix):
+            case (ContactName(), None, None):
+                return next(filter(lambda x: x.name == name, contacts.values()), None)
+            case (None, PublicKey(), None):
+                return contacts.get(public_key, None)
+            case (None, None, PublicKeyPrefix()):
+                return next(filter(lambda x: x.public_key.startswith(public_key_prefix), contacts.values()), None)
+            case _:
+                raise Exception(f"one of name or public_key or public_key_prefix required")
 
+    async def send_chan_msg(self, channel_idx: int, message: Message):
+        result = await self.meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
+            channel_idx, str(message)
+        )
+        if result.type == EventType.ERROR:
+            raise MeshcoreError(f"send_chan_msg({channel_idx}, {message})", result.payload)
 
-def backoff_iter():
-    schedule = [1, 1, 1, 1, 2, 2, 4, 8]
-    for i in range(len(schedule)):
-        yield schedule[i]
-    while True:
-        yield schedule[-1]
+    async def send_msg(self, destination: PublicKey, message: Message):
+        result = await self.meshcore.commands.send_msg(str(destination), str(message))
+        if result.type == EventType.ERROR:
+            raise MeshcoreError(f"send_msg({destination}, {message})", result.payload)
 
 
 async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, chatter: Chatter):
@@ -270,9 +284,24 @@ async def amain():
     self_contact_name = ContactName(meshcore.self_info["name"])
     self_contact = Contact(self_contact_name, PublicKey(meshcore.self_info["public_key"]), ContactType.CLIENT)
     chatter: Chatter = MatrixASChatter(config.matrix)
-    await chatter.init(self_contact)
+    await chatter.init(self_contact)  # TODO what if synapse is down
     mcp = MeshCorePlus(meshcore)
 
+    fault: Future[None] = Future()
+
+    def fault_wrapper(cb: Any):
+        class Helper:
+            async def __call__(self, *args: Any, **kwargs: Any):
+                try:
+                    await cb(*args, **kwargs)
+                except InvalidRequestException:
+                    raise
+                except Exception as e:
+                    fault.set_exception(e)
+
+        return Helper()
+
+    @fault_wrapper
     async def channel_callback(
         identity: PublicKey, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
     ):
@@ -280,18 +309,17 @@ async def amain():
             # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
             return
+        if len(message) > MAXISH_MESSAGE_LENGTH:
+            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {MAXISH_MESSAGE_LENGTH}")
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
-            raise Exception(f"Unknown channel: {channel_name}")
+            raise InvalidRequestException(f"Unknown channel: {channel_name}")
         if config.enable_send:
-            result = await meshcore.commands.send_chan_msg(  # pyright: ignore [reportUnknownMemberType]
-                channel.idx, str(message)
-            )
-            if result.type == EventType.ERROR:
-                raise Exception(result.payload)
+            await mcp.send_chan_msg(channel.idx, message)
         else:
             logger.debug(f"!send message {message} {message_id}")
 
+    @fault_wrapper
     async def direct_callback(
         identity: PublicKey, source: ContactName, destination: PublicKey, message: Message, message_id: MessageId
     ):
@@ -299,22 +327,18 @@ async def amain():
             # FIXME illegal state
             logger.warning(f"!send message {message} {message_id}")
             return
-        if len(message) > 156:
-            raise Exception(f"Message too long: len[{len(message)}] > {156}")
+        if len(message) > MAXISH_MESSAGE_LENGTH:
+            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {MAXISH_MESSAGE_LENGTH}")
         if config.enable_send:
             logger.info(f"Direct message: {destination} -> {message}")
-            result = await meshcore.commands.send_msg(str(destination), str(message))
-            if result.type == EventType.ERROR:
-                raise Exception(result.payload)
+            await mcp.send_msg(destination, message)
         else:
             logger.debug(f"!send message {message} {message_id}")
-
-    await chatter.add_direct_callback(self_contact.public_key, self_contact_name, direct_callback)
 
     async def seed_contacts():
         async with TaskGroup() as g:
             s = asyncio.Semaphore(8)
-            async for contact in mcp.list_contacts():
+            async for contact in mcp.iter_contacts():
                 if contact.type != ContactType.CLIENT:
                     continue
 
@@ -324,17 +348,22 @@ async def amain():
 
                 g.create_task(_update_contact(_contact=contact))
 
-    if config.seed_contacts:
-        await seed_contacts()
+    # Set up and run
+    await chatter.add_direct_callback(self_contact.public_key, self_contact_name, direct_callback)
 
     async for channel in mcp.iter_channels():
         await chatter.add_channel_callback(
             self_contact.public_key, channel.name, channel_callback, invitees=[self_contact.name]
         )
 
+    # TODO what if synapse is down
+    if config.seed_contacts:
+        await seed_contacts()
+
     async with TaskGroup() as g:
         g.create_task(chatter.run())
         g.create_task(main_loop(config, self_contact, mcp, chatter))
+        await fault
 
 
 def main():
