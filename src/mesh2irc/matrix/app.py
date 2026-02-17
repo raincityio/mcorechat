@@ -1,6 +1,9 @@
 import asyncio
+import json
 import logging
+import ssl
 from collections.abc import Callable, Awaitable
+from pathlib import Path
 
 from aiohttp import web
 from aiohttp.web_request import Request
@@ -22,6 +25,7 @@ from mesh2irc.matrix.common import (
     RoomMembership,
     UserName,
     RoomName,
+    SecretText,
 )
 from mesh2irc.matrix.config import Config
 from mesh2irc.matrix.matrix_client import MatrixClient
@@ -29,6 +33,17 @@ from mesh2irc.matrix.matrix_client import MatrixClient
 type EventHandler = Callable[[MatrixEvent], Awaitable[None]]
 
 logger = logging.getLogger(__name__)
+
+
+def get_secret(secret: SecretText | None, secret_path: Path | None) -> SecretText:
+    match (secret, secret_path):
+        case (SecretText(), None):
+            return secret
+        case (None, Path()):
+            value = json.loads(secret_path.read_text())
+            return SecretText(value)
+        case _:
+            raise Exception("Exactly one of secret_path or secret must be provided")
 
 
 class MatrixASChatter:
@@ -41,7 +56,8 @@ class MatrixASChatter:
         self.room_cache_lock = asyncio.Lock()
         self.user_cache: dict[UserId, DisplayName] = {}
         self.app_user = UserId(config.app_user, config.domain)
-        self.client = MatrixClient(config.homeserver, config.app_as_token)
+        self.client = MatrixClient(config.homeserver, get_secret(config.app_as_token, config.app_as_token_path))
+        self.app_hs_token = get_secret(config.app_hs_token, config.app_hs_token_path)
         self.discovery_room_id: RoomId | None = None
         self.advertisement_room_id: RoomId | None = None
         self._event_handlers: dict[str, EventHandler] = {
@@ -123,9 +139,16 @@ class MatrixASChatter:
         runner = web.AppRunner(app)
         await runner.setup()
 
-        site = web.TCPSite(runner, host="0.0.0.0", port=9000)
+        if (self.config.ssl is not None) and self.config.ssl.enabled:
+            ssl_context = ssl.create_default_context()
+            ssl_context.load_cert_chain(self.config.ssl.certfile, self.config.ssl.keyfile)
+        else:
+            ssl_context = None
+
+        host, port = self.config.listen
+        site = web.TCPSite(runner, host=host, port=port, ssl_context=ssl_context)
         await site.start()
-        logger.debug(f"Started server on {9000}")
+        logger.debug(f"Started server on {host}:{port}")
 
     ## Interface
     async def advertise(self, identity: PublicKey, public_key: PublicKey, *, contact: Contact | None = None) -> None:
@@ -488,5 +511,5 @@ class MatrixASChatter:
 
     def verify_as_token(self, request: Request):
         token = request.headers.get("Authorization")
-        if token != f"Bearer {self.config.app_hs_token.value}":
+        if token != f"Bearer {self.app_hs_token.value}":
             raise web.HTTPUnauthorized()

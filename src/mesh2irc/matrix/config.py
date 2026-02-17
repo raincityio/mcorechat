@@ -1,36 +1,68 @@
 #!/usr/bin/env python3
 import dataclasses
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from mesh2irc.common import ChannelName
 from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppNamespace
+
+default_listen = ("127.0.0.1", 9000)
+default_homeserver = HomeserverURL("http://127.0.0.1:8008")
+
+
+@dataclasses.dataclass(frozen=True)
+class SSLConfig:
+    certfile: Path
+    keyfile: Path
+    enabled: bool = True
+
+    @staticmethod
+    def from_data(data: dict[str, Any]) -> "SSLConfig":
+        field_types: dict[str, Callable[[Any], Any]] = {
+            "certfile": Path,
+            "keyfile": Path,
+        }
+        kwargs = data.copy()
+        for key, cls in field_types.items():
+            if key in data:
+                kwargs[key] = cls(data[key])
+        return SSLConfig(**kwargs)
 
 
 @dataclasses.dataclass(frozen=True)
 class Config:
     domain: DomainName
     app_user: UserName
-    app_as_token: SecretText
-    app_hs_token: SecretText
     app_namespace: AppNamespace
-    homeserver: HomeserverURL = HomeserverURL("http://localhost:8008")
+    app_as_token: SecretText | None = None
+    app_as_token_path: Path | None = None
+    app_hs_token: SecretText | None = None
+    app_hs_token_path: Path | None = None
+    listen: tuple[str, int] = default_listen
+    homeserver: HomeserverURL = default_homeserver
     trusted_suffix: str | None = " [trusted]"
     enable_discovery_room: bool = True
     discovery_channel_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True
     advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
+    ssl: SSLConfig | None = None
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
-        field_types: dict[str, type] = {
+        field_types: dict[str, Callable[[Any], Any]] = {
             "domain": DomainName,
             "homeserver": HomeserverURL,
             "app_user": UserName,
             "app_as_token": SecretText,
+            "app_as_token_path": Path,
             "app_hs_token": SecretText,
+            "app_hs_token_path": Path,
             "app_namespace": AppNamespace,
+            "listen": tuple,
             "discovery_room_name": ChannelName,
             "advertisement_room_name": ChannelName,
+            "ssl": SSLConfig.from_data,
         }
         kwargs = data.copy()
         for key, cls in field_types.items():

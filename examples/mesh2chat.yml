@@ -3,6 +3,7 @@ meshcore:
   tcp_endpoint: [ koopa.elisha.raincity.io, 5678 ]
 #  tcp_endpoint: [ localhost, 5678 ]
 matrix:
+  listen: [ 0.0.0.0, 9000 ]
   homeserver: "http://polaris.elisha.raincity.io:8008"
   #  homeserver: "http://localhost:8008"
   domain: example.com
