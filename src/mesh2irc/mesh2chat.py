@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+from aiohttp import ClientError
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
@@ -132,47 +133,48 @@ class MeshCorePlus:
         raise Exception("Missing contact key")
 
 
+def backoff_iter():
+    schedule = [1, 1, 1, 1, 2, 2, 4, 8]
+    for i in range(len(schedule)):
+        yield schedule[i]
+    while True:
+        yield schedule[-1]
+
+
 async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, chatter: Chatter):
 
-    async def drive_messages():
+    async def handle_contact_msg_recv(event: Event):
+        public_key_prefix = PublicKeyPrefix(event.payload["pubkey_prefix"])
+        contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
+        logger.debug(f"Private Message: {event} {contact}")
+        if contact is None:
+            logger.warning(f"Unknown contact: {event}")
+        else:
+            message = Message(event.payload["text"])
+            await chatter.send_direct(contact, self_contact.name, message, event)
+
+    async def handle_channel_msg_recv(event: Event):
+        user_name_raw, rest = str(event.payload["text"]).split(":", 1)
+        contact_name = ContactName(user_name_raw)
+        message = Message(rest.lstrip())
+        channel = await mcp.get_channel(idx=event.payload["channel_idx"])
+        if channel is None:
+            logger.warning(f"Unknown channel: {event}")
+        else:
+            await chatter.send_channel(self_contact.public_key, contact_name, message, event, channel.name)
+
+    async def handle_messages_waiting(event_q: asyncio.Queue[Event]):
         while True:
             result = await mcp.meshcore.commands.get_msg()
-            if (result.type == EventType.NO_MORE_MSGS) or (result.type == EventType.ERROR):
-                break
-            message_type = result.payload["type"]
-            if message_type == "CHAN":
-                user_name_raw, rest = str(result.payload["text"]).split(":", 1)
-                contact_name = ContactName(user_name_raw)
-                message = Message(rest.lstrip())
-                channel = await mcp.get_channel(idx=result.payload["channel_idx"])
-                if channel is None:
-                    logger.warning(f"Unknown channel: {result}")
-                else:
-                    await chatter.send_channel(self_contact.public_key, contact_name, message, result, channel.name)
-            elif message_type == "PRIV":
-                public_key_prefix = PublicKeyPrefix(result.payload["pubkey_prefix"])
-                contact = await mcp.get_contact(public_key_prefix=public_key_prefix)
-                logger.debug(f"Private Message: {result} {contact}")
-                if contact is None:
-                    logger.warning(f"Unknown contact: {result}")
-                else:
-                    message = Message(result.payload["text"])
-                    await chatter.send_direct(contact, self_contact.name, message, result)
-            else:
-                raise Exception(f"Unknown message type: {message_type}")
-
-    loop_f = asyncio.Future[None]()
-
-    async def messages_waiting(event: Event):
-        try:
-            await drive_messages()
-        except Exception as e:
-            if loop_f.done():
-                logger.exception(e)
-            else:
-                loop_f.set_exception(e)
-
-    mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, messages_waiting)
+            match result.type:
+                case EventType.NO_MORE_MSGS:
+                    break
+                case EventType.CHANNEL_MSG_RECV:
+                    event_q.put_nowait(result)
+                case EventType.CONTACT_MSG_RECV:
+                    event_q.put_nowait(result)
+                case _:
+                    raise Exception(f"Unexpected event: {result}")
 
     async def handle_advertisement(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
@@ -184,19 +186,44 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         if advertise:
             await chatter.advertise(self_contact.public_key, public_key, contact=contact)
 
-    mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_advertisement)
-
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
         if contact is not None:
             await chatter.update_contact(contact)
 
-    mcp.meshcore.subscribe(EventType.NEW_CONTACT, handle_new_contact)
+    async def event_loop():
+        event_q: asyncio.Queue[Event] = asyncio.Queue()
+        mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, event_q.put)
+        mcp.meshcore.subscribe(EventType.ADVERTISEMENT, event_q.put)
+        mcp.meshcore.subscribe(EventType.NEW_CONTACT, event_q.put)
 
-    await drive_messages()
+        await handle_messages_waiting(event_q)
+        while True:
+            event = await event_q.get()
+            backoff = iter(backoff_iter())
+            while True:
+                logger.info(f"Processing event: {event}")
+                try:
+                    match event.type:
+                        case EventType.MESSAGES_WAITING:
+                            await handle_messages_waiting(event_q)
+                        case EventType.ADVERTISEMENT:
+                            await handle_advertisement(event)
+                        case EventType.NEW_CONTACT:
+                            await handle_new_contact(event)
+                        case EventType.CONTACT_MSG_RECV:
+                            await handle_contact_msg_recv(event)
+                        case EventType.CHANNEL_MSG_RECV:
+                            await handle_channel_msg_recv(event)
+                        case _:
+                            logger.warning(f"Unexpected event: {event}")
+                    break
+                except ClientError as e:
+                    logging.error(e)
+                    await asyncio.sleep(next(backoff))
 
-    await loop_f
+    await event_loop()
 
 
 async def amain():
