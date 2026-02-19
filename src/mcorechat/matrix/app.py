@@ -9,7 +9,7 @@ from aiohttp import web
 from aiohttp.web_request import Request
 from meshcore.events import Event
 
-from mcorechat.chatter import DirectCallback, ChannelCallback
+from mcorechat.chatter import DirectCallback, ChannelCallback, CommandCallback
 from mcorechat.common import ContactName, Message, ChannelName, Contact, PublicKey, HTMLMessage, MessageId
 from mcorechat.matrix import common
 from mcorechat.matrix.common import (
@@ -67,6 +67,28 @@ class MatrixASChatter:
             "m.room.name": self.handle_room_name,
             "m.room.message": self.handle_room_message,
         }
+
+    async def add_command_callback(
+        self, identity: PublicKey, cb: CommandCallback, *, invitees: list[ContactName] | None = None
+    ):
+        room_name = self.create_room_name(self.config.command_channel_name)
+        room_alias = self.create_room_alias(identity, self.config.command_channel_name)
+        room = await self.ensure_room(room_name, room_alias)
+
+        async def _cb(
+            _identity: PublicKey,
+            _source: ContactName,
+            _destination: ChannelName,
+            _message: Message,
+            _message_id: MessageId,
+        ):
+            try:
+                for _line in await cb(_identity, _source, _message):
+                    await self.client.send_message(room.id, Message(_line))
+            except Exception as e:
+                await self.send_error(room.id, str(e))
+
+        await self.add_channel_callback(identity, self.config.command_channel_name, _cb, invitees=invitees)
 
     ## Resource Helpers
     def create_user_id(self, *, contact_name: ContactName | None = None, contact: Contact | None = None) -> UserId:

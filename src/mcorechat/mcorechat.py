@@ -2,10 +2,12 @@
 
 
 import asyncio
+import json
 import logging
 import logging.config
+import shlex
 import signal
-from argparse import ArgumentParser
+from argparse import ArgumentError, ArgumentParser
 from asyncio import Future, Task, TaskGroup, AbstractEventLoop
 from pathlib import Path
 from typing import Any, Optional
@@ -27,6 +29,7 @@ from mcorechat.common import (
     MessageId,
     ContactType,
     backoff_iter,
+    JSONEncoder,
 )
 from mcorechat.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mcorechat.matrix.app import MatrixASChatter
@@ -301,6 +304,43 @@ async def amain():
 
         return Helper()
 
+    class ThrowingArgumentParser(ArgumentParser):
+        def error(self, message: str):
+            raise ArgumentError(None, message)
+
+        def exit(self, status: int = 0, message: str | None = None):
+            if message:
+                raise RuntimeError(message)
+            raise RuntimeError(f"Exited with status {status}")
+
+    async def command_callback(identity: PublicKey, source: ContactName, message: Message) -> list[str]:
+        cmd = shlex.split(str(message))
+
+        parser = ThrowingArgumentParser(exit_on_error=False)
+        subparsers = parser.add_subparsers(dest="command")
+        subparsers.add_parser("self-info")
+        subparser = subparsers.add_parser("get-channel")
+        subparser.add_argument("--name", required=True)
+        subparser = subparsers.add_parser("send-advert")
+        subparser.add_argument("--flood", action="store_true")
+        try:
+            args = parser.parse_args(args=cmd)
+        except ArgumentError as e:
+            raise InvalidRequestException(str(e)) from e
+
+        if args.command is None:
+            raise InvalidRequestException(f"Invalid command: {cmd}")
+        elif args.command == "self-info":
+            return [json.dumps(meshcore.self_info)]
+        elif args.command == "get-channel":
+            channel = await mcp.get_channel(name=ChannelName(args.name))
+            return [json.dumps(channel, cls=JSONEncoder)]
+        elif args.command == "send-advert":
+            advert = await meshcore.commands.send_advert(flood=args.flood)
+            return [json.dumps(advert, cls=JSONEncoder)]
+        else:
+            raise InvalidRequestException(f"Unknown command: {cmd}")
+
     @fault_wrapper
     async def channel_callback(
         identity: PublicKey, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
@@ -355,6 +395,8 @@ async def amain():
         await chatter.add_channel_callback(
             self_contact.public_key, channel.name, channel_callback, invitees=[self_contact.name]
         )
+
+    await chatter.add_command_callback(self_contact.public_key, command_callback, invitees=[self_contact.name])
 
     # TODO what if synapse is down
     if config.seed_contacts:

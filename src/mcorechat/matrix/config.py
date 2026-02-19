@@ -46,6 +46,7 @@ class Config:
     discovery_channel_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True
     advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
+    command_channel_name: ChannelName = ChannelName("[command]")
     ssl: SSLConfig | None = None
 
     @staticmethod

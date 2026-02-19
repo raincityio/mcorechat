@@ -97,6 +97,10 @@ class JSONEncoder(json.JSONEncoder):
             return o.name
         elif isinstance(o, bytes):
             return o.hex()
+        elif type(o) is Channel:
+            return {"name": o.name, "idx": o.idx}
+        elif type(o) is ChannelName:
+            return str(o)
         elif type(o) in (
             ChannelName,
             Message,

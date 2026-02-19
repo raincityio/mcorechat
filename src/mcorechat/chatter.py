@@ -10,6 +10,7 @@ from mcorechat.common import ContactName, ChannelName, Message, MessageId, Conta
 DirectCallback = Callable[[PublicKey, ContactName, PublicKey, Message, MessageId], Awaitable[None]]
 # identity, source, destination, message, message_id
 ChannelCallback = Callable[[PublicKey, ContactName, ChannelName, Message, MessageId], Awaitable[None]]
+CommandCallback = Callable[[PublicKey, ContactName, Message], Awaitable[list[str]]]
 
 
 class Chatter(Protocol):
@@ -33,6 +34,14 @@ class Chatter(Protocol):
         identity: PublicKey,
         channel_name: ChannelName,
         cb: ChannelCallback,
+        *,
+        invitees: list[ContactName] | None = None,
+    ) -> None: ...
+
+    async def add_command_callback(
+        self,
+        identity: PublicKey,
+        cb: CommandCallback,
         *,
         invitees: list[ContactName] | None = None,
     ) -> None: ...
