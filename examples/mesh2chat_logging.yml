@@ -26,6 +26,8 @@ root:
   handlers: [ console ]
 
 loggers:
+  meshcore:
+    level: DEBUG
   mcorechat:
     level: DEBUG
 #  nio:

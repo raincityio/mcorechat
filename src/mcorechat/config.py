@@ -8,7 +8,6 @@ from typing import Any, Optional
 
 import platformdirs
 
-from mcorechat.json_state import Config as JsonStateConfig
 from .matrix.config import Config as MatrixConfig
 
 default_config_path = platformdirs.user_config_path("mesh2chat").joinpath("config.yml")
@@ -48,7 +47,6 @@ class Config:
     meshcore: MeshCoreConfig = MeshCoreConfig()
     loglevel: Optional[int] = None
     logging_config_path: Path = default_logging_config_path
-    json_state: JsonStateConfig = JsonStateConfig()
     seed_contacts: bool = True
     enable_send: bool = True
     advertise_known: bool = False
@@ -60,8 +58,6 @@ class Config:
             kwargs["matrix"] = MatrixConfig.from_data(data["matrix"])
         if "loglevel" in data:
             kwargs["loglevel"] = logging.getLevelName(data["loglevel"])  # pyright: ignore [reportDeprecated]
-        if "json_state" in data:
-            kwargs["json_state"] = JsonStateConfig.from_data(data["json_state"])
         if "logging_config_path" in data:
             kwargs["logging_config_path"] = Path(data["logging_config_path"]).expanduser()
         if "meshcore" in data:

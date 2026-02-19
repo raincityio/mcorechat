@@ -11,15 +11,13 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "pyyaml>=5.0",
-    "platformdirs>=2.3.6",
-    "irc>=20.5.0",
-    "matrix-nio",
-    "pydle",
-    "meshcore"
+    "platformdirs>=4.9.2",
+    "matrix-nio>=0.25.2",
+    "meshcore==2.2.8"
 ]
 
 [project.scripts]
-mcorechat = "mcorechat.mesh2chat:main"
+mcorechat = "mcorechat.mcorechat:main"
 matrix-admin-cli = "mcorechat.matrix.admincli:main"
 
 [tool.black]
