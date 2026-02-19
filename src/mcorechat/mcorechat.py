@@ -30,6 +30,7 @@ from mcorechat.common import (
     ContactType,
     backoff_iter,
     JSONEncoder,
+    DisplayName,
 )
 from mcorechat.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mcorechat.matrix.app import MatrixASChatter
@@ -172,13 +173,13 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
 
     async def handle_channel_msg_recv(event: Event):
         user_name_raw, rest = str(event.payload["text"]).split(":", 1)
-        contact_name = ContactName(user_name_raw)
+        display_name = DisplayName(user_name_raw)
         message = Message(rest.lstrip())
         channel = await mcp.get_channel(idx=event.payload["channel_idx"])
         if channel is None:
             logger.warning(f"Unknown channel: {event}")
         else:
-            await chatter.send_channel(self_contact.public_key, contact_name, message, event, channel.name)
+            await chatter.send_channel(self_contact, display_name, message, event, channel.name)
 
     async def handle_messages_waiting(event_q: asyncio.Queue[Event]):
         while True:
@@ -285,6 +286,7 @@ async def amain():
 
     meshcore = await get_meshcore(config.meshcore, main_task)
     self_contact_name = ContactName(meshcore.self_info["name"])
+    self_display_name = DisplayName(meshcore.self_info["name"])
     self_contact = Contact(self_contact_name, PublicKey(meshcore.self_info["public_key"]), ContactType.CLIENT)
     chatter: Chatter = MatrixASChatter(config.matrix)
     await chatter.init(self_contact)  # TODO what if synapse is down
@@ -313,7 +315,7 @@ async def amain():
                 raise RuntimeError(message)
             raise RuntimeError(f"Exited with status {status}")
 
-    async def command_callback(identity: PublicKey, source: ContactName, message: Message) -> list[str]:
+    async def command_callback(identity: PublicKey, source: DisplayName, message: Message) -> list[str]:
         cmd = shlex.split(str(message))
 
         parser = ThrowingArgumentParser(exit_on_error=False)
@@ -343,9 +345,9 @@ async def amain():
 
     @fault_wrapper
     async def channel_callback(
-        identity: PublicKey, source: ContactName, channel_name: ChannelName, message: Message, message_id: MessageId
+        identity: PublicKey, source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
     ):
-        if source != self_contact_name:
+        if source != self_display_name:
             # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
             return
@@ -361,9 +363,9 @@ async def amain():
 
     @fault_wrapper
     async def direct_callback(
-        identity: PublicKey, source: ContactName, destination: PublicKey, message: Message, message_id: MessageId
+        identity: PublicKey, source: DisplayName, destination: PublicKey, message: Message, message_id: MessageId
     ):
-        if source != self_contact_name:
+        if source != self_display_name:
             # FIXME illegal state
             logger.warning(f"!send message {message} {message_id}")
             return
@@ -389,14 +391,12 @@ async def amain():
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
-    await chatter.add_direct_callback(self_contact.public_key, self_contact_name, direct_callback)
+    await chatter.add_direct_callback(self_contact.public_key, self_display_name, direct_callback)
 
     async for channel in mcp.iter_channels():
-        await chatter.add_channel_callback(
-            self_contact.public_key, channel.name, channel_callback, invitees=[self_contact.name]
-        )
+        await chatter.add_channel_callback(self_contact, channel.name, channel_callback, invitees=[self_contact.name])
 
-    await chatter.add_command_callback(self_contact.public_key, command_callback, invitees=[self_contact.name])
+    await chatter.add_command_callback(self_contact, command_callback, invitees=[self_contact.name])
 
     # TODO what if synapse is down
     if config.seed_contacts:

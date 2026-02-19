@@ -4,13 +4,13 @@ from typing import Protocol
 
 from meshcore.events import Event
 
-from mcorechat.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
+from mcorechat.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey, DisplayName
 
 # identity, source, destination, message, message_id
-DirectCallback = Callable[[PublicKey, ContactName, PublicKey, Message, MessageId], Awaitable[None]]
+DirectCallback = Callable[[PublicKey, DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
 # identity, source, destination, message, message_id
-ChannelCallback = Callable[[PublicKey, ContactName, ChannelName, Message, MessageId], Awaitable[None]]
-CommandCallback = Callable[[PublicKey, ContactName, Message], Awaitable[list[str]]]
+ChannelCallback = Callable[[PublicKey, DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
+CommandCallback = Callable[[PublicKey, DisplayName, Message], Awaitable[list[str]]]
 
 
 class Chatter(Protocol):
@@ -24,14 +24,14 @@ class Chatter(Protocol):
     async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None: ...
 
     async def send_channel(
-        self, identity: PublicKey, source: ContactName, message: Message, event: Event, channel_name: ChannelName
+        self, contact: Contact, source: DisplayName, message: Message, event: Event, channel_name: ChannelName
     ) -> None: ...
 
-    async def add_direct_callback(self, identity: PublicKey, source: ContactName, cb: DirectCallback) -> None: ...
+    async def add_direct_callback(self, identity: PublicKey, source: DisplayName, cb: DirectCallback) -> None: ...
 
     async def add_channel_callback(
         self,
-        identity: PublicKey,
+        contact: Contact,
         channel_name: ChannelName,
         cb: ChannelCallback,
         *,
@@ -40,7 +40,7 @@ class Chatter(Protocol):
 
     async def add_command_callback(
         self,
-        identity: PublicKey,
+        contact: Contact,
         cb: CommandCallback,
         *,
         invitees: list[ContactName] | None = None,

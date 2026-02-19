@@ -41,7 +41,7 @@ class Config:
     app_hs_token_path: Path | None = None
     listen: tuple[str, int] = default_listen
     homeserver: HomeserverURL = default_homeserver
-    trusted_suffix: str | None = " [trusted]"
+    contact_suffix: str | None = " [contact]"
     enable_discovery_room: bool = True
     discovery_channel_name: ChannelName = ChannelName("[discovery]")
     enable_advertisement_room: bool = True
