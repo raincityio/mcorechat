@@ -12,7 +12,7 @@ matrix:
   app_hs_token: HS_SUPER_SECRET_TOKEN
   app_namespace: mesh_
 
-logging_config_path: ~/PycharmProjects/mesh2irc/examples/mesh2chat_logging.yml
+logging_config_path: ~/PycharmProjects/mcorechat/examples/mesh2chat_logging.yml
 #seed_contacts: true
 #seed_contacts: false
 enable_send: true

@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from mesh2irc.chatter import MessageId
+from mcorechat.chatter import MessageId
 
 
 class State(Protocol):

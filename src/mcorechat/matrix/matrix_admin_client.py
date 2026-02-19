@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from mesh2irc.matrix.common import (
+from mcorechat.matrix.common import (
     HomeserverURL,
     SecretText,
     UserId,

@@ -10,31 +10,31 @@
 # each option, go to docs/usage/configuration/config_documentation.md or
 # https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html
 server_name: "example.com"
-pid_file: /home/drew/mesh2irc/synapse/homeserver.pid
+pid_file: /home/drew/mcorechat/synapse/homeserver.pid
 listeners:
   - bind_addresses:
-    - ::1
-    - 0.0.0.0
+      - ::1
+      - 0.0.0.0
     port: 8008
     resources:
-    - compress: false
-      names:
-      - client
-      - federation
+      - compress: false
+        names:
+          - client
+          - federation
     tls: false
     type: http
     x_forwarded: true
 database:
   name: sqlite3
   args:
-    database: /home/drew/mesh2irc/synapse/homeserver.db
-log_config: "/home/drew/mesh2irc/synapse/example.com.log.config"
-media_store_path: /home/drew/mesh2irc/synapse/media_store
+    database: /home/drew/mcorechat/synapse/homeserver.db
+log_config: "/home/drew/mcorechat/synapse/example.com.log.config"
+media_store_path: /home/drew/mcorechat/synapse/media_store
 registration_shared_secret: "-_P-&=2VS21*R.Pm;K584KVsiDYKuy9~Jt~QqNRetqgUU#G;zt"
 report_stats: false
 macaroon_secret_key: "PsTVypEyQ:&KcH.*j7E@OSJ@7wAlDYiA-4NJZX#6El=mZ#2Wrl"
 form_secret: "jdMhXP+TlpC7MNd7FRIw*M=OW54b*P_fqZlTmXC;1cRnX1-iRd"
-signing_key_path: "/home/drew/mesh2irc/synapse/example.com.signing.key"
+signing_key_path: "/home/drew/mcorechat/synapse/example.com.signing.key"
 trusted_key_servers:
   - server_name: "matrix.org"
 
@@ -50,7 +50,7 @@ user_directory:
   search_all_users: true
 
 app_service_config_files:
-  - /home/drew/mesh2irc/matrix-app.yml
+  - /home/drew/mcorechat/matrix-app.yml
 
 
 # message sending limits

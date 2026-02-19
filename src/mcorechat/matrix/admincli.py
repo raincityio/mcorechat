@@ -6,8 +6,8 @@ from argparse import ArgumentParser
 
 from nio import Any, AsyncClient, LoginError
 
-from mesh2irc.matrix.common import HomeserverURL, UserId, DomainName, UserName, SecretText, RoomId
-from mesh2irc.matrix.matrix_admin_client import MatrixAdminClient
+from mcorechat.matrix.common import HomeserverURL, UserId, DomainName, UserName, SecretText, RoomId
+from mcorechat.matrix.matrix_admin_client import MatrixAdminClient
 
 homeserver = HomeserverURL("http://polaris.elisha.raincity.io:8008")
 

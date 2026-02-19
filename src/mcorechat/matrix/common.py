@@ -6,8 +6,8 @@ import hashlib
 import json
 from typing import Any
 
-from mesh2irc.common import ContactName, Contact, PublicKey, ChannelName
-from mesh2irc.common import JSONEncoder as CommonJSONEncoder
+from mcorechat.common import ContactName, Contact, PublicKey, ChannelName
+from mcorechat.common import JSONEncoder as CommonJSONEncoder
 
 type MatrixEvent = dict[str, Any]
 

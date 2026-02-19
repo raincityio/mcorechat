@@ -5,8 +5,8 @@ from urllib.parse import quote
 
 import aiohttp
 
-from mesh2irc.common import HTMLMessage, Message
-from mesh2irc.matrix.common import (
+from mcorechat.common import HTMLMessage, Message
+from mcorechat.matrix.common import (
     HomeserverURL,
     SecretText,
     UserId,
@@ -19,7 +19,7 @@ from mesh2irc.matrix.common import (
     parse_room_alias,
     RoomName,
 )
-from mesh2irc.matrix.htmlutils import strip_html
+from mcorechat.matrix.htmlutils import strip_html
 
 logger = logging.getLogger(__name__)
 

@@ -9,10 +9,10 @@ from aiohttp import web
 from aiohttp.web_request import Request
 from meshcore.events import Event
 
-from mesh2irc.chatter import DirectCallback, ChannelCallback
-from mesh2irc.common import ContactName, Message, ChannelName, Contact, PublicKey, HTMLMessage, MessageId
-from mesh2irc.matrix import common
-from mesh2irc.matrix.common import (
+from mcorechat.chatter import DirectCallback, ChannelCallback
+from mcorechat.common import ContactName, Message, ChannelName, Contact, PublicKey, HTMLMessage, MessageId
+from mcorechat.matrix import common
+from mcorechat.matrix.common import (
     DisplayName,
     MatrixAPIError,
     MatrixEvent,
@@ -27,8 +27,8 @@ from mesh2irc.matrix.common import (
     RoomName,
     SecretText,
 )
-from mesh2irc.matrix.config import Config
-from mesh2irc.matrix.matrix_client import MatrixClient
+from mcorechat.matrix.config import Config
+from mcorechat.matrix.matrix_client import MatrixClient
 
 type EventHandler = Callable[[MatrixEvent], Awaitable[None]]
 

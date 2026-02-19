@@ -4,7 +4,7 @@ from typing import Protocol
 
 from meshcore.events import Event
 
-from mesh2irc.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
+from mcorechat.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey
 
 # identity, source, destination, message, message_id
 DirectCallback = Callable[[PublicKey, ContactName, PublicKey, Message, MessageId], Awaitable[None]]

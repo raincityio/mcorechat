@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mesh2irc.common import ChannelName
-from mesh2irc.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppNamespace
+from mcorechat.common import ChannelName
+from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppNamespace
 
 default_listen = ("127.0.0.1", 9000)
 default_homeserver = HomeserverURL("http://127.0.0.1:8008")

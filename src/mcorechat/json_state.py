@@ -7,9 +7,9 @@ from typing import Any
 
 import platformdirs
 
-from mesh2irc.chatter import MessageId
+from mcorechat.chatter import MessageId
 
-default_state_path = platformdirs.user_state_path("mesh2irc").joinpath("state.json")
+default_state_path = platformdirs.user_state_path("mcorechat").joinpath("state.json")
 
 
 @dataclasses.dataclass(frozen=True)

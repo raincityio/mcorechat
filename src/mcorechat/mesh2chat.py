@@ -15,8 +15,8 @@ from aiohttp import ClientError
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mesh2irc.chatter import Chatter
-from mesh2irc.common import (
+from mcorechat.chatter import Chatter
+from mcorechat.common import (
     Contact,
     Channel,
     ContactName,
@@ -28,8 +28,8 @@ from mesh2irc.common import (
     ContactType,
     backoff_iter,
 )
-from mesh2irc.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
-from mesh2irc.matrix.app import MatrixASChatter
+from mcorechat.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
+from mcorechat.matrix.app import MatrixASChatter
 
 logger = logging.getLogger(__name__)
 

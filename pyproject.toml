@@ -3,7 +3,7 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mesh2irc"
+name = "mcorechat"
 version = "0.2"
 authors = [
     { name = "Drew Gochenaur" }
@@ -19,12 +19,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mesh2chat = "mesh2irc.mesh2chat:main"
-irc-server = "mesh2irc.irc.server:main"
-matrix-bridge = "mesh2irc.matrix.bridge:main"
-matrix-new-user = "mesh2irc.matrix.new_user:main"
-matrix-app = "mesh2irc.matrix.app:main"
-matrix-admin-cli = "mesh2irc.matrix.admincli:main"
+mcorechat = "mcorechat.mesh2chat:main"
+matrix-admin-cli = "mcorechat.matrix.admincli:main"
 
 [tool.black]
 line-length = 120

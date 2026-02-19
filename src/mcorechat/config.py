@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import platformdirs
 
-from mesh2irc.json_state import Config as JsonStateConfig
+from mcorechat.json_state import Config as JsonStateConfig
 from .matrix.config import Config as MatrixConfig
 
 default_config_path = platformdirs.user_config_path("mesh2chat").joinpath("config.yml")
