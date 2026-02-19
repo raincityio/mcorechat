@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcorechat.common import ChannelName
-from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserName, AppNamespace
+from mcorechat.common import ChannelName, ContactName
+from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserId, UserName, AppNamespace, parse_user_id
 
 default_listen = ("127.0.0.1", 9000)
 default_homeserver = HomeserverURL("http://127.0.0.1:8008")
@@ -48,6 +48,7 @@ class Config:
     advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
     command_channel_name: ChannelName = ChannelName("[command]")
     ssl: SSLConfig | None = None
+    contact_name_mappings: dict[ContactName, UserId] = dataclasses.field(default_factory=dict[ContactName, UserId])
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":
@@ -64,6 +65,7 @@ class Config:
             "discovery_room_name": ChannelName,
             "advertisement_room_name": ChannelName,
             "ssl": SSLConfig.from_data,
+            "contact_name_mappings": lambda x: {ContactName(k): parse_user_id(v) for k, v in x.items()},
         }
         kwargs = data.copy()
         for key, cls in field_types.items():

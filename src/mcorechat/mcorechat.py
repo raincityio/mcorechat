@@ -202,7 +202,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         else:
             advertise = config.advertise_known
         if advertise:
-            await chatter.advertise(self_contact.public_key, public_key, contact=contact)
+            await chatter.advertise(public_key, contact=contact)
 
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
@@ -315,7 +315,7 @@ async def amain():
                 raise RuntimeError(message)
             raise RuntimeError(f"Exited with status {status}")
 
-    async def command_callback(identity: PublicKey, source: DisplayName, message: Message) -> list[str]:
+    async def command_callback(source: DisplayName, message: Message) -> list[str]:
         cmd = shlex.split(str(message))
 
         parser = ThrowingArgumentParser(exit_on_error=False)
@@ -344,9 +344,7 @@ async def amain():
             raise InvalidRequestException(f"Unknown command: {cmd}")
 
     @fault_wrapper
-    async def channel_callback(
-        identity: PublicKey, source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
-    ):
+    async def channel_callback(source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId):
         if source != self_display_name:
             # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
@@ -362,9 +360,7 @@ async def amain():
             logger.debug(f"!send message {message} {message_id}")
 
     @fault_wrapper
-    async def direct_callback(
-        identity: PublicKey, source: DisplayName, destination: PublicKey, message: Message, message_id: MessageId
-    ):
+    async def direct_callback(source: DisplayName, destination: PublicKey, message: Message, message_id: MessageId):
         if source != self_display_name:
             # FIXME illegal state
             logger.warning(f"!send message {message} {message_id}")
@@ -391,12 +387,12 @@ async def amain():
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
-    await chatter.add_direct_callback(self_contact.public_key, self_display_name, direct_callback)
+    await chatter.add_direct_callback(self_display_name, direct_callback)
 
     async for channel in mcp.iter_channels():
-        await chatter.add_channel_callback(self_contact, channel.name, channel_callback, invitees=[self_contact.name])
+        await chatter.add_channel_callback(self_contact, channel.name, channel_callback)
 
-    await chatter.add_command_callback(self_contact, command_callback, invitees=[self_contact.name])
+    await chatter.add_command_callback(self_contact, command_callback)
 
     # TODO what if synapse is down
     if config.seed_contacts:
