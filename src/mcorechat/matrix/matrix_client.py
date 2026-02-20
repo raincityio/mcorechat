@@ -144,6 +144,7 @@ class MatrixClient:
             payload=payload,
         )
 
+    # TODO this can take an alias
     async def join_room(
         self,
         room_id: RoomId,
@@ -151,6 +152,14 @@ class MatrixClient:
         as_user_id: UserId | None = None,
     ):
         await self._post(["join", room_id], as_user_id=as_user_id)
+
+    async def leave_room(
+        self,
+        room_id: RoomId,
+        *,
+        as_user_id: UserId | None = None,
+    ):
+        await self._post(["rooms", room_id, "leave"], as_user_id=as_user_id)
 
     async def invite_user(
         self,

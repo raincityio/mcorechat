@@ -180,7 +180,7 @@ class MatrixASChatter:
                 display_name = self.create_display_name(contact.name)
                 await self.ensure_user(user_id, display_name)
                 room = await self.get_room(self.advertisement_room_id)
-                await self.ensure_room_join_membership(room, user_id)
+                await self.ensure_room_member_joined(room, user_id)
                 await self.client.send_message(room.id, message, as_user_id=user_id)
 
     async def update_contact(self, contact: Contact) -> None:
@@ -188,24 +188,29 @@ class MatrixASChatter:
         self.contacts[user_id] = contact
         await self.ensure_user(user_id, self.create_display_name(contact.name))
         if self.discovery_room_id is not None:
-            await self.ensure_room_join_membership(self.room_cache[self.discovery_room_id], user_id)
+            await self.ensure_room_member_joined(self.room_cache[self.discovery_room_id], user_id)
 
     async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None:
         source_user_id = self.create_user_id(contact=source)
         destination_user_id = self.map_contact_name(destination)
-        await self.ensure_user(source_user_id, self.create_display_name(source.name))
         room = await self._find_dm_room(source_user_id, destination_user_id)
         if room is None:
+            await self.ensure_user(source_user_id, self.create_display_name(source.name))
             room_id = await self.client.create_direct_room(
                 invite=[destination_user_id, self.app_user],
                 as_user_id=source_user_id,
             )
             room = await self.get_room(room_id)
+            await self.ensure_room_member_joined(room, self.app_user)
         await self.client.send_message(room.id, message, as_user_id=source_user_id)
 
     async def _find_dm_room(self, source_user_id: UserId, destination_user_id: UserId) -> Room | None:
         def check_room(_room: Room):
-            return _room.is_present(source_user_id) and _room.is_present(destination_user_id)
+            return (
+                _room.is_present(source_user_id)
+                and _room.is_present(destination_user_id)
+                and _room.is_present(self.app_user)
+            )
 
         for room in self.room_cache.values():
             if room.name is not None:
@@ -262,7 +267,7 @@ class MatrixASChatter:
         await self.client.set_display_name(user_id, display_name)
         self.user_cache[user_id] = display_name
 
-    async def ensure_room_join_membership(self, room: Room, user_id: UserId):
+    async def ensure_room_member_joined(self, room: Room, user_id: UserId):
         room_member = room.members.get(user_id)
         if room_member is None:
             try:
@@ -288,7 +293,7 @@ class MatrixASChatter:
         source_user_id = self.create_user_id(display_name=source)
         if source_user_id not in room.members:
             await self.ensure_user(source_user_id, source)
-            await self.ensure_room_join_membership(room, source_user_id)
+            await self.ensure_room_member_joined(room, source_user_id)
         await self.client.send_message(room.id, message, as_user_id=source_user_id)
 
     async def add_direct_callback(self, source: DisplayName, cb: DirectCallback) -> None:
@@ -311,6 +316,7 @@ class MatrixASChatter:
         value = event.get("content", {}).get(key, None)
         return None if value == "" else value
 
+    # TODO do i need this anymore
     async def handle_room_create(self, event: MatrixEvent) -> None:
         # m.room.create
         room_id = RoomId(event["room_id"])
@@ -325,10 +331,8 @@ class MatrixASChatter:
     async def handle_room_name(self, event: MatrixEvent) -> None:
         # m.room.name
         room_id = RoomId(event["room_id"])
-        async with self.room_cache_lock:
-            room = self.room_cache.get(room_id)
-            if room is not None:
-                room.name = self.parse_room_name(event)
+        room = await self.get_room(room_id)
+        room.name = self.parse_room_name(event)
 
     def parse_room_canonical_alias(self, event: MatrixEvent) -> RoomAlias | None:
         raw_alias = self._parse_event_content(event, "alias")
@@ -337,10 +341,8 @@ class MatrixASChatter:
     async def handle_room_canonical_alias(self, event: MatrixEvent) -> None:
         # m.room.canonical_alias
         room_id = RoomId(event["room_id"])
-        async with self.room_cache_lock:
-            room = self.room_cache.get(room_id)
-            if room is not None:
-                room.alias = self.parse_room_canonical_alias(event)
+        room = await self.get_room(room_id)
+        room.alias = self.parse_room_canonical_alias(event)
 
     def parse_member(self, event: MatrixEvent):
         user_id = parse_user_id(event["state_key"])
@@ -356,12 +358,10 @@ class MatrixASChatter:
         return member.is_direct and (contact is not None)
 
     async def handle_room_member(self, event: MatrixEvent) -> None:
-        member = self.parse_member(event)
         room_id = RoomId(event["room_id"])
-        async with self.room_cache_lock:
-            room = self.room_cache.get(room_id)
-            if room is not None:
-                room.members[member.user_id] = member
+        room = await self.get_room(room_id)
+        member = self.parse_member(event)
+        room.members[member.user_id] = member
         # only take action if we own the user
         if not self.is_app_user_id(member.user_id):
             return
@@ -369,26 +369,20 @@ class MatrixASChatter:
             invite_room = self._build_room_from_state(room_id, event.get("invite_room_state", []))
             # If this is an app room alias then its an unambiguous channel that we created
             if self.is_app_room_alias(invite_room.alias):
-                if self.is_direct_member(member):
+                if member.is_direct or (member.user_id in self.contacts):
                     # NOTE we don't support direct members in our channel rooms
                     # TODO feedback?
                     logger.error(f"Invalid channel invite: {invite_room} {member}")
+                    await self.client.leave_room(room_id, as_user_id=member.user_id)
                 else:
                     await self.client.join_room(room_id, as_user_id=member.user_id)
             else:
                 # ok, not a channel, join if it's direct and the contact is direct, and add app user too for management
-                if self.is_direct_member(member):
+                if member.is_direct and (member.user_id in self.contacts):  # self.is_direct_member(member):
                     await self.client.join_room(room_id, as_user_id=member.user_id)
-                    try:
-                        await self.client.invite_user(room_id, self.app_user, as_user_id=member.user_id)
-                    except MatrixAPIError as e:
-                        # the user was already invited, this error code seems like a bug
-                        if e.status != 403:
-                            raise
-                    await self.client.join_room(room_id)
+                    await self.ensure_room_member_joined(room, self.app_user)
                 else:
-                    # NOTE we don't support non-direct members in non-channels
-                    # TODO feedback?
+                    await self.client.leave_room(room_id, as_user_id=member.user_id)
                     logger.error(f"Invalid direct invite: {invite_room} {member}")
 
     def is_app_room_alias(self, alias: RoomAlias | None) -> bool:
@@ -436,16 +430,19 @@ class MatrixASChatter:
                     await self.send_error(room_id, "Failed to send message", cause=str(e))
         else:
             for member in room.members.values():
-                if self.is_app_user_id(member.user_id) and self.is_direct_member(member):
-                    contact = self.contacts[member.user_id]
-                    cb = self.direct_callbacks.get(source, None)
-                    if cb is None:
-                        await self.send_error(room_id, "Failed to send message", cause=f"Unknown source: {source}")
-                    else:
-                        try:
-                            await cb(source, contact.public_key, message, event_id)
-                        except Exception as e:
-                            await self.send_error(room_id, "Failed to send message", cause=str(e))
+                if not member.is_direct:
+                    continue
+                contact = self.contacts.get(member.user_id, None)
+                if contact is None:
+                    continue
+                cb = self.direct_callbacks.get(source, None)
+                if cb is None:
+                    await self.send_error(room_id, "Failed to send message", cause=f"Unknown source: {source}")
+                else:
+                    try:
+                        await cb(source, contact.public_key, message, event_id)
+                    except Exception as e:
+                        await self.send_error(room_id, "Failed to send message", cause=str(e))
 
     def _build_room_from_state(self, room_id: RoomId, state: list[MatrixEvent]) -> Room:
         room = Room(room_id)
