@@ -54,6 +54,7 @@ class MatrixASChatter:
         self.channel_callbacks = dict[RoomAlias, tuple[ChannelName, ChannelCallback]]()
         self.room_cache: dict[RoomId, Room] = {}
         self.room_cache_lock = asyncio.Lock()
+        self.room_ids: dict[RoomAlias, RoomId] = {}
         self.user_cache: dict[UserId, DisplayName] = {}
         self.contacts = dict[UserId, Contact]()
         self.app_user = UserId(config.app_user, config.domain)
@@ -70,8 +71,8 @@ class MatrixASChatter:
         }
 
     async def add_command_callback(self, identity: Contact, cb: CommandCallback):
-        room_name, room_alias = self.create_room_ids(identity, self.config.command_channel_name)
-        room = await self.ensure_room(room_name, room_alias)
+        room_name, room_alias = self.create_room_identity(identity, self.config.command_channel_name)
+        room_id = await self.ensure_room(room_name, room_alias)
 
         async def _cb(
             _source: DisplayName,
@@ -81,9 +82,9 @@ class MatrixASChatter:
         ):
             try:
                 for _line in await cb(_source, _message):
-                    await self.client.send_message(room.id, Message(_line))
+                    await self.client.send_message(room_id, Message(_line))
             except Exception as e:
-                await self.send_error(room.id, str(e))
+                await self.send_error(room_id, str(e))
 
         await self.add_channel_callback(identity, self.config.command_channel_name, _cb)
 
@@ -104,7 +105,7 @@ class MatrixASChatter:
             case _:
                 raise Exception("Exactly one of display_name or contact must be provided")
 
-    def create_room_ids(self, identity: Contact, channel_name: ChannelName):
+    def create_room_identity(self, identity: Contact, channel_name: ChannelName):
         room_name = RoomName(f"{channel_name}")
         room_alias = RoomAlias(
             ChannelName(f"{self.config.app_namespace}.{identity.public_key}.{room_name}"), self.config.domain
@@ -121,9 +122,9 @@ class MatrixASChatter:
         # await self.client.set_display_name(self.app_user, DisplayName("MeshBot"))
         if self.config.enable_discovery_room:
             discovery_channel_name = self.config.discovery_channel_name
-            discovery_room_name, discovery_room_alias = self.create_room_ids(contact, discovery_channel_name)
-            discovery_room = await self.ensure_room(discovery_room_name, discovery_room_alias)
-            self.discovery_room_id = discovery_room.id
+            discovery_room_name, discovery_room_alias = self.create_room_identity(contact, discovery_channel_name)
+            self.discovery_room_id = await self.ensure_room(discovery_room_name, discovery_room_alias)
+            discovery_room = await self.get_room(self.discovery_room_id)
             for member in discovery_room.members.values():
                 display_name = (
                     DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
@@ -132,11 +133,10 @@ class MatrixASChatter:
             await self.send_channel_invite(self.discovery_room_id, contact.name)
         if self.config.enable_advertisement_room:
             advertisement_channel_name = self.config.advertisement_channel_name
-            advertisement_room_name, advertisement_room_alias = self.create_room_ids(
+            advertisement_room_name, advertisement_room_alias = self.create_room_identity(
                 contact, advertisement_channel_name
             )
-            advertisement_room = await self.ensure_room(advertisement_room_name, advertisement_room_alias)
-            self.advertisement_room_id = advertisement_room.id
+            self.advertisement_room_id = await self.ensure_room(advertisement_room_name, advertisement_room_alias)
             await self.send_channel_invite(self.advertisement_room_id, contact.name)
 
     async def run(self):
@@ -226,15 +226,13 @@ class MatrixASChatter:
         return None
 
     async def ensure_room(self, room_name: RoomName, room_alias: RoomAlias):
-        room = next(filter(lambda x: room_alias == x.alias, self.room_cache.values()), None)
-        if room is not None:
-            if room.name != room_name:
-                await self.client.set_room_name(room.id, room_name)
-            return room
+        if room_alias in self.room_ids:
+            return self.room_ids[room_alias]
         room_id = await self.client.get_room_id_by_alias(room_alias)
         if room_id is None:
             room_id = await self.client.create_room(room_name, room_alias)
-        return await self.get_room(room_id)
+        self.room_ids[room_alias] = room_id
+        return room_id
 
     def map_contact_name(self, contact_name: ContactName):
         if contact_name in self.config.contact_name_mappings:
@@ -288,8 +286,9 @@ class MatrixASChatter:
     async def send_channel(
         self, identity: Contact, source: DisplayName, message: Message, event: Event, channel_name: ChannelName
     ) -> None:
-        room_name, room_alias = self.create_room_ids(identity, channel_name)
-        room = await self.ensure_room(room_name, room_alias)
+        room_name, room_alias = self.create_room_identity(identity, channel_name)
+        room_id = await self.ensure_room(room_name, room_alias)
+        room = await self.get_room(room_id)
         source_user_id = self.create_user_id(display_name=source)
         if source_user_id not in room.members:
             await self.ensure_user(source_user_id, source)
@@ -306,10 +305,10 @@ class MatrixASChatter:
         channel_name: ChannelName,
         cb: ChannelCallback,
     ) -> None:
-        room_name, room_alias = self.create_room_ids(identity, channel_name)
+        room_name, room_alias = self.create_room_identity(identity, channel_name)
         assert room_alias not in self.channel_callbacks
-        room = await self.ensure_room(room_name, room_alias)
-        await self.send_channel_invite(room.id, identity.name)
+        room_id = await self.ensure_room(room_name, room_alias)
+        await self.send_channel_invite(room_id, identity.name)
         self.channel_callbacks[room_alias] = (channel_name, cb)
 
     def _parse_event_content(self, event: MatrixEvent, key: str) -> str | None:
