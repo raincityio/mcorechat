@@ -108,7 +108,7 @@ class MatrixASChatter:
     def create_room_identity(self, identity: Contact, channel_name: ChannelName):
         room_name = RoomName(f"{channel_name}")
         room_alias = RoomAlias(
-            ChannelName(f"{self.config.app_namespace}.{identity.public_key}.{room_name}"), self.config.domain
+            ChannelName(f"{self.config.app_namespace}.channel.{identity.public_key}.{room_name}"), self.config.domain
         )
         return room_name, room_alias
 
