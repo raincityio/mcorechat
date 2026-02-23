@@ -8,7 +8,7 @@ import logging.config
 import shlex
 import signal
 from argparse import ArgumentError, ArgumentParser
-from asyncio import Future, Task, TaskGroup, AbstractEventLoop
+from asyncio import Future, Task, TaskGroup, AbstractEventLoop, CancelledError
 from pathlib import Path
 from typing import Any, Optional
 
@@ -169,7 +169,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
             logger.warning(f"Unknown contact: {event}")
         else:
             message = Message(event.payload["text"])
-            await chatter.send_direct(contact, self_contact.name, message, event)
+            await chatter.send_contact(self_contact, contact, self_contact.name, message, event)
 
     async def handle_channel_msg_recv(event: Event):
         user_name_raw, rest = str(event.payload["text"]).split(":", 1)
@@ -202,13 +202,14 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         else:
             advertise = config.advertise_known
         if advertise:
-            await chatter.advertise(public_key, contact=contact)
+            await chatter.advertise(self_contact, public_key, contact=contact)
 
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
+        assert False
         if contact is not None:
-            await chatter.update_contact(contact)
+            await chatter.add_contact(self_contact, contact, None)
 
     async def event_loop():
         event_q: asyncio.Queue[Event] = asyncio.Queue()
@@ -355,6 +356,7 @@ async def amain():
         if channel is None:
             raise InvalidRequestException(f"Unknown channel: {channel_name}")
         if config.enable_send:
+            logger.debug(f"send message {message} {message_id}")
             await mcp.send_chan_msg(channel.idx, message)
         else:
             logger.debug(f"!send message {message} {message_id}")
@@ -368,29 +370,29 @@ async def amain():
         if len(message) > MAXISH_MESSAGE_LENGTH:
             raise InvalidRequestException(f"Message too long: len[{len(message)}] > {MAXISH_MESSAGE_LENGTH}")
         if config.enable_send:
-            logger.info(f"Direct message: {destination} -> {message}")
+            logger.debug(f"send message {destination} {message}")
             await mcp.send_msg(destination, message)
         else:
-            logger.debug(f"!send message {message} {message_id}")
+            logger.debug(f"!send message {destination} {message}")
 
     async def seed_contacts():
         async with TaskGroup() as g:
-            s = asyncio.Semaphore(8)
+            s = asyncio.Semaphore(16)
             async for contact in mcp.iter_contacts():
                 if contact.type != ContactType.CLIENT:
                     continue
 
                 async def _update_contact(_contact: Contact):
                     async with s:
-                        await chatter.update_contact(_contact)
+                        await chatter.add_contact(self_contact, _contact, direct_callback)
 
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
-    await chatter.add_direct_callback(self_display_name, direct_callback)
+    # await chatter.add_direct_callback(self_display_name, direct_callback)
 
     async for channel in mcp.iter_channels():
-        await chatter.add_channel_callback(self_contact, channel.name, channel_callback)
+        await chatter.add_channel(self_contact, channel.name, channel_callback)
 
     await chatter.add_command_callback(self_contact, command_callback)
 
@@ -405,4 +407,7 @@ async def amain():
 
 
 def main():
-    asyncio.run(amain())
+    try:
+        asyncio.run(amain())
+    except CancelledError:
+        logger.info(f"Cancelled")

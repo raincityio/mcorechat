@@ -135,19 +135,6 @@ class RoomMember:
     display_name: DisplayName | None
 
 
-@dataclasses.dataclass
-class Room:
-    id: RoomId
-    name: RoomName | None = None
-    members: dict[UserId, RoomMember] = dataclasses.field(default_factory=dict[UserId, RoomMember])
-    alias: RoomAlias | None = None
-
-    def is_present(self, user_id: UserId) -> bool:
-        return (user_id in self.members) and (
-            self.members[user_id].membership in (RoomMembership.JOIN, RoomMembership.INVITE)
-        )
-
-
 class MatrixAPIError(Exception):
     def __init__(self, status: int, errcode: str, error: str):
         self.status = status

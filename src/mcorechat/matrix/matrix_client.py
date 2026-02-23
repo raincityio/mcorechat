@@ -18,10 +18,27 @@ from mcorechat.matrix.common import (
     RoomVisibility,
     parse_room_alias,
     RoomName,
+    RoomMember,
+    MatrixEvent,
+    parse_user_id,
+    RoomMembership,
 )
 from mcorechat.matrix.htmlutils import strip_html
 
 logger = logging.getLogger(__name__)
+
+
+def parse_member_state(user_id: UserId, state: dict[str, Any]) -> RoomMember:
+    is_direct = state.get("is_direct", False)
+    membership = RoomMembership(state["membership"])
+    display_name_raw = state.get("displayname", None)
+    display_name = None if (display_name_raw in (None, "")) else DisplayName(display_name_raw)
+    return RoomMember(user_id, is_direct, membership, display_name)
+
+
+def parse_member_event(event: MatrixEvent):
+    user_id = parse_user_id(event["state_key"])
+    return parse_member_state(user_id, event["content"])
 
 
 class MatrixClient:
@@ -59,9 +76,22 @@ class MatrixClient:
         data = await self._get(["publicRooms"])
         return [RoomId(e["room_id"]) for e in data["chunk"]]
 
+    # GET /_matrix/client/v3/rooms/{roomId}/state/m.room.member/{userId}
+    async def get_room_member(self, room_id: RoomId, user_id: UserId, *, as_user_id: UserId | None = None):
+        try:
+            data = await self._get(["rooms", room_id, "state", "m.room.member", user_id], as_user_id=as_user_id)
+            return parse_member_state(user_id, data)
+        except MatrixAPIError as e:
+            if e.status == 403:
+                if e.error.startswith(f"User {user_id} not in room {room_id}"):
+                    return None
+            elif e.status == 404:
+                return None
+            raise
+
     async def get_room_members(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         data = await self._get(["rooms", room_id, "members"], as_user_id=as_user_id)
-        print(data)
+        return [parse_member_event(e) for e in data.get("chunk", [])]
 
     async def set_room_alias(self, room_id: RoomId, alias: RoomAlias):
         payload = {
@@ -97,12 +127,21 @@ class MatrixClient:
         data = await self._post(["createRoom"], payload=payload)
         return RoomId(data["room_id"])
 
-    async def create_direct_room(self, invite: list[UserId], *, as_user_id: UserId | None = None) -> RoomId:
+    # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.power_levels
+    async def get_room_power_levels(self, room_id: RoomId, *, as_user_id: UserId | None = None):
+        data = await self._get(["rooms", room_id, "state", "m.room.power_levels"], as_user_id=as_user_id)
+        print(data)
+
+    async def create_direct_room(
+        self, name: RoomName, alias: RoomAlias, invite: list[UserId], *, as_user_id: UserId | None = None
+    ) -> RoomId:
         payload: dict[str, Any] = {
+            "name": name,
             "visibility": RoomVisibility.PRIVATE.value,
             "invite": [e for e in invite],
             "is_direct": True,
             "preset": "trusted_private_chat",
+            "room_alias_name": alias.name,
         }
         data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
         return RoomId(data["room_id"])
@@ -118,6 +157,13 @@ class MatrixClient:
             if e.status == 404:
                 return None
             raise
+
+    # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.tombstone
+    async def tombstone_room(self, room_id: RoomId, replacement_room: RoomId, *, as_user_id: UserId | None = None):
+        payload = {
+            "replacement_room": replacement_room,
+        }
+        await self._put(["rooms", room_id, "state", "m.room.tombstone"], payload=payload, as_user_id=as_user_id)
 
     async def send_message(self, room_id: RoomId, body: Message | HTMLMessage, *, as_user_id: UserId | None = None):
         txn_id = str(time.time())
@@ -172,9 +218,16 @@ class MatrixClient:
         await self._post(["rooms", room_id, "invite"], payload=payload, as_user_id=as_user_id)
 
     # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.name
-    async def set_room_name(self, room_id: RoomId, name: RoomName):
+    async def set_room_name(self, room_id: RoomId, name: RoomName, *, as_user_id: UserId | None = None):
         payload = {"name": name}
-        return await self._put(["rooms", room_id, "state", "m.room.name"], payload=payload)
+        return await self._put(["rooms", room_id, "state", "m.room.name"], payload=payload, as_user_id=as_user_id)
+
+    async def delete_room_name(self, room_id: RoomId, *, as_user_id: UserId | None = None):
+        await self._delete(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
+
+    async def get_room_name(self, room_id: RoomId, *, as_user_id: UserId | None = None):
+        data = await self._get(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
+        return RoomName(data["name"])
 
     async def get_room_state(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         return await self._get(["rooms", room_id, "state"], as_user_id=as_user_id)

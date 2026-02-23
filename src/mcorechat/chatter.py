@@ -7,11 +7,19 @@ from meshcore.events import Event
 from mcorechat.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey, DisplayName
 
 # source, destination, message, message_id
-DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
+ContactCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
 # source, destination, message, message_id
 ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
 # source, message
 CommandCallback = Callable[[DisplayName, Message], Awaitable[list[str]]]
+
+
+class UnknownChannelException(Exception):
+    pass
+
+
+class UnknownContactException(Exception):
+    pass
 
 
 class Chatter(Protocol):
@@ -20,21 +28,21 @@ class Chatter(Protocol):
 
     async def run(self) -> None: ...
 
-    async def update_contact(self, contact: Contact) -> None: ...
+    async def add_contact(self, identity: Contact, contact: Contact, cb: ContactCallback) -> None: ...
 
-    async def send_direct(self, source: Contact, destination: ContactName, message: Message, event: Event) -> None: ...
-
-    async def send_channel(
-        self, identity: Contact, source: DisplayName, message: Message, event: Event, channel_name: ChannelName
+    async def send_contact(
+        self, identity: Contact, source: Contact, destination: ContactName, message: Message, event: Event
     ) -> None: ...
 
-    async def add_direct_callback(self, source: DisplayName, cb: DirectCallback) -> None: ...
-
-    async def add_channel_callback(
+    async def add_channel(
         self,
         identity: Contact,
         channel_name: ChannelName,
         cb: ChannelCallback,
+    ) -> None: ...
+
+    async def send_channel(
+        self, identity: Contact, source: DisplayName, message: Message, event: Event, channel_name: ChannelName
     ) -> None: ...
 
     async def add_command_callback(
@@ -43,6 +51,4 @@ class Chatter(Protocol):
         cb: CommandCallback,
     ) -> None: ...
 
-    async def advertise(self, public_key: PublicKey, *, contact: Contact | None = None) -> None: ...
-
-    # async def set_contacts(self, identity: Contact, contacts: list[Contact]) -> None: ...
+    async def advertise(self, identity: Contact, public_key: PublicKey, *, contact: Contact | None = None) -> None: ...
