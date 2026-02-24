@@ -190,7 +190,6 @@ class MatrixClient:
             payload=payload,
         )
 
-    # TODO this can take an alias
     async def join_room(
         self,
         room_id: RoomId,

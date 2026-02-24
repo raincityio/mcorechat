@@ -48,6 +48,7 @@ class Config:
     advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
     command_channel_name: ChannelName = ChannelName("[command]")
     ssl: SSLConfig | None = None
+    dev_soft_fail: bool = False
     contact_name_mappings: dict[ContactName, UserId] = dataclasses.field(default_factory=dict[ContactName, UserId])
 
     @staticmethod

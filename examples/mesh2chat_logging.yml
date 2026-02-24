@@ -26,6 +26,8 @@ root:
   handlers: [ console ]
 
 loggers:
+  aiohttp.access:
+    level: DEBUG
   meshcore:
     level: DEBUG
   mcorechat:
