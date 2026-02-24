@@ -113,38 +113,31 @@ class MatrixClient:
         data = await self._get(["joined_rooms"], as_user_id=as_user_id)
         return [RoomId(e) for e in data["joined_rooms"]]
 
-    async def create_room(
-        self, room_name: RoomName, room_alias: RoomAlias, *, invite: list[UserId] | None = None
-    ) -> RoomId:
+    async def create_room(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
         payload: dict[str, Any] = {
-            "name": room_name,
-            "room_alias_name": room_alias.name,
+            "name": name,
+            "room_alias_name": alias.name,
             "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
-            "invite": [] if invite is None else [e for e in invite],
             "preset": "public_chat",  # default preset
         }
+        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
+        return RoomId(data["room_id"])
 
-        data = await self._post(["createRoom"], payload=payload)
+    async def create_direct_room(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
+        payload: dict[str, Any] = {
+            "name": name,
+            "room_alias_name": alias.name,
+            "visibility": RoomVisibility.PRIVATE.value,
+            "preset": "trusted_private_chat",
+            "is_direct": True,
+        }
+        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
         return RoomId(data["room_id"])
 
     # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.power_levels
     async def get_room_power_levels(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         data = await self._get(["rooms", room_id, "state", "m.room.power_levels"], as_user_id=as_user_id)
         print(data)
-
-    async def create_direct_room(
-        self, name: RoomName, alias: RoomAlias, invite: list[UserId], *, as_user_id: UserId | None = None
-    ) -> RoomId:
-        payload: dict[str, Any] = {
-            "name": name,
-            "visibility": RoomVisibility.PRIVATE.value,
-            "invite": [e for e in invite],
-            "is_direct": True,
-            "preset": "trusted_private_chat",
-            "room_alias_name": alias.name,
-        }
-        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
-        return RoomId(data["room_id"])
 
     async def delete_room_alias(self, alias: RoomAlias) -> None:
         return await self._delete(["directory", "room", alias])

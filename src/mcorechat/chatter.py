@@ -2,12 +2,10 @@
 from collections.abc import Callable, Awaitable
 from typing import Protocol
 
-from meshcore.events import Event
-
 from mcorechat.common import ContactName, ChannelName, Message, MessageId, Contact, PublicKey, DisplayName
 
 # source, destination, message, message_id
-ContactCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
+DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
 # source, destination, message, message_id
 ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
 # source, message
@@ -28,10 +26,10 @@ class Chatter(Protocol):
 
     async def run(self) -> None: ...
 
-    async def add_contact(self, identity: Contact, contact: Contact, cb: ContactCallback) -> None: ...
+    async def add_contact(self, identity: Contact, contact: Contact, cb: DirectCallback) -> None: ...
 
-    async def send_contact(
-        self, identity: Contact, source: Contact, destination: ContactName, message: Message, event: Event
+    async def send_direct(
+        self, identity: Contact, source: Contact, destination: ContactName, message: Message
     ) -> None: ...
 
     async def add_channel(
@@ -42,7 +40,7 @@ class Chatter(Protocol):
     ) -> None: ...
 
     async def send_channel(
-        self, identity: Contact, source: DisplayName, message: Message, event: Event, channel_name: ChannelName
+        self, identity: Contact, source: DisplayName, message: Message, channel_name: ChannelName
     ) -> None: ...
 
     async def add_command_callback(

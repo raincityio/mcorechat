@@ -169,7 +169,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
             logger.warning(f"Unknown contact: {event}")
         else:
             message = Message(event.payload["text"])
-            await chatter.send_contact(self_contact, contact, self_contact.name, message, event)
+            await chatter.send_direct(self_contact, contact, self_contact.name, message)
 
     async def handle_channel_msg_recv(event: Event):
         user_name_raw, rest = str(event.payload["text"]).split(":", 1)
@@ -179,7 +179,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         if channel is None:
             logger.warning(f"Unknown channel: {event}")
         else:
-            await chatter.send_channel(self_contact, display_name, message, event, channel.name)
+            await chatter.send_channel(self_contact, display_name, message, channel.name)
 
     async def handle_messages_waiting(event_q: asyncio.Queue[Event]):
         while True:
@@ -207,7 +207,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
-        assert False
+        assert False  # TODO
         if contact is not None:
             await chatter.add_contact(self_contact, contact, None)
 
