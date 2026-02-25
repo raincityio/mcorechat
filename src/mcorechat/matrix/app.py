@@ -215,6 +215,14 @@ class MatrixASChatter:
         alias = self.create_channel_alias(identity, channel_name)
         return RoomIdentity(alias, name)
 
+    def create_space_identity(self, identity: Contact):
+        alias = RoomAlias(
+            ChannelName(f"{self.config.app_namespace}.space.{identity.public_key}"),
+            self.config.domain,
+        )
+        name = RoomName(str(identity.name))
+        return RoomIdentity(alias, name)
+
     def map_contact_name(self, contact_name: ContactName):
         if contact_name in self.config.contact_name_mappings:
             return self.config.contact_name_mappings[contact_name]
@@ -226,29 +234,24 @@ class MatrixASChatter:
         # FIXME this doesn't work
         # synapse throws an exception in its log
         # await self.client.set_display_name(self.app_user, DisplayName("MeshBot"))
-        if self.config.enable_discovery_room:
 
-            async def handler(*_args: Any):
-                raise Exception("Discovery room does not support messages")
+        space_identity = self.create_space_identity(contact)
+        space_info = await self.ensure_space(space_identity)
+        await self.send_room_invite(space_info.id, contact.name)
 
-            discovery_room_identity = self.create_channel_identity(contact, self.config.discovery_channel_name)
-            discovery_room_id = (await self.ensure_room(discovery_room_identity, handler)).id
-            for member in await self.client.get_room_members(discovery_room_id):
-                display_name = (
-                    DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
-                )
-                key = (discovery_room_id, member.user_id)
-                self.room_members[key] = member
-                self.user_cache[member.user_id] = display_name
-            await self.send_channel_invite(discovery_room_id, contact.name)
-        if self.config.enable_advertisement_room:
+        for member in await self.client.get_room_members(space_info.id):
+            display_name = DisplayName(str(member.user_id.name)) if member.display_name is None else member.display_name
+            key = (space_info.id, member.user_id)
+            self.room_members[key] = member
+            self.user_cache[member.user_id] = display_name
 
-            async def handler(*_args: Any):
-                raise Exception("Advertisement room does not support messages")
+        # advertisement room
+        async def handler(*_args: Any):
+            raise Exception("Advertisement room does not support messages")
 
-            advertisement_room_identity = self.create_channel_identity(contact, self.config.advertisement_channel_name)
-            advertisement_room_id = (await self.ensure_room(advertisement_room_identity, handler)).id
-            await self.send_channel_invite(advertisement_room_id, contact.name)
+        advertisement_room_identity = self.create_channel_identity(contact, self.config.advertisement_channel_name)
+        advertisement_room_id = (await self.ensure_room(space_info.id, advertisement_room_identity, handler)).id
+        await self.send_room_invite(advertisement_room_id, contact.name)
 
     async def run(self):
         app = web.Application()
@@ -288,24 +291,51 @@ class MatrixASChatter:
             except Exception as e:
                 await self.send_error(_room_id, str(e))
 
+        space_identity = self.create_space_identity(identity)
+        space_info = await self.ensure_space(space_identity)
         room_identity = self.create_channel_identity(identity, self.config.command_channel_name)
-        room_info = await self.ensure_room(room_identity, handler)
-        await self.send_channel_invite(room_info.id, identity.name)
+        room_info = await self.ensure_room(space_info.id, room_identity, handler)
+        await self.send_room_invite(room_info.id, identity.name)
 
     async def advertise(self, identity: Contact, public_key: PublicKey, *, contact: Contact | None = None) -> None:
-        if self.config.enable_advertisement_room:
-            room_alias = self.create_channel_alias(identity, self.config.advertisement_channel_name)
-            room_info = self.room_manager.get(room_alias=room_alias)
-            message = Message(str(public_key))
-            if contact is None:
-                await self.client.send_message(room_info.id, message)
-            else:
-                user_identity = self.create_user_identity(identity, contact)
-                await self.ensure_user(user_identity)
-                await self.ensure_room_member_joined(room_info.id, user_identity.id)
-                await self.client.send_message(room_info.id, message, as_user_id=user_identity.id)
+        room_alias = self.create_channel_alias(identity, self.config.advertisement_channel_name)
+        room_info = self.room_manager.get(room_alias=room_alias)
+        message = Message(str(public_key))
+        if contact is None:
+            await self.client.send_message(room_info.id, message)
+        else:
+            user_identity = self.create_user_identity(identity, contact)
+            await self.ensure_user(user_identity)
+            await self.ensure_room_member_joined(room_info.id, user_identity.id)
+            await self.client.send_message(room_info.id, message, as_user_id=user_identity.id)
 
-    async def ensure_room(self, identity: RoomIdentity, handler: RoomHandler) -> RoomInfo:
+    async def ensure_space(
+        self,
+        identity: RoomIdentity,
+    ) -> RoomInfo:
+        if identity.alias in self.room_manager:
+            return self.room_manager.get(room_alias=identity.alias)
+        room_id = await self.client.get_room_id_by_alias(identity.alias)
+        if room_id is None:
+            room_id = await self.client.create_room(identity.name, identity.alias, is_space=True)
+        else:
+            test_room_name = await self.client.get_room_name(room_id)
+            if identity.name != test_room_name:
+                await self.client.set_room_name(room_id, identity.name)
+
+        async def handler(*_args: Any) -> None:
+            assert False
+
+        room_info = RoomInfo(room_id, identity.alias, identity.name, handler)
+        self.room_manager.add(room_info)
+        return room_info
+
+    async def ensure_room(
+        self,
+        space_id: RoomId,
+        identity: RoomIdentity,
+        handler: RoomHandler,
+    ) -> RoomInfo:
         if identity.alias in self.room_manager:
             return self.room_manager.get(room_alias=identity.alias)
         room_id = await self.client.get_room_id_by_alias(identity.alias)
@@ -315,6 +345,8 @@ class MatrixASChatter:
             test_room_name = await self.client.get_room_name(room_id)
             if identity.name != test_room_name:
                 await self.client.set_room_name(room_id, identity.name)
+        # TODO potentially unnecessary attach
+        await self.client.state_attach_child(space_id, room_id, self.config.domain)
         room_info = RoomInfo(room_id, identity.alias, identity.name, handler)
         self.room_manager.add(room_info)
         return room_info
@@ -363,6 +395,11 @@ class MatrixASChatter:
             if direct_identity.name != test_room_name:
                 await self.client.set_room_name(room_id, direct_identity.name, as_user_id=user_identity.id)
         self.contact_manager.add(ContactInfo(contact, room_id, direct_identity.alias, user_identity.id))
+        # TODO
+        space_identity = self.create_space_identity(identity)
+        space_info = await self.ensure_space(space_identity)
+        await self.client.state_attach_child(space_info.id, room_id, self.config.domain)
+        await self.ensure_room_member_joined(space_info.id, user_identity.id)
 
         async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId) -> None:
             _room_member = await self.get_room_member(_room_id, _source_user_id, as_user_id=user_identity.id)
@@ -376,10 +413,6 @@ class MatrixASChatter:
                 await cb(_source, contact.public_key, _message, _message_id)
 
         self.room_manager.add(RoomInfo(room_id, direct_identity.alias, direct_identity.name, handler))
-        if self.config.enable_discovery_room:
-            discovery_room_alias = self.create_channel_alias(identity, self.config.discovery_channel_name)
-            discovery_room_id = self.room_manager.get(room_alias=discovery_room_alias).id
-            await self.ensure_room_member_joined(discovery_room_id, user_identity.id)
 
     async def send_direct(self, identity: Contact, source: Contact, destination: ContactName, message: Message) -> None:
         source_user_id = self.create_user_id(identity, contact=source)
@@ -397,7 +430,7 @@ class MatrixASChatter:
                 await self.invite_user(room_info.id, destination_user_id, as_user_id=source_user_id)
         await self.client.send_message(room_info.id, message, as_user_id=source_user_id)
 
-    async def send_channel_invite(self, room_id: RoomId, contact_name: ContactName) -> None:
+    async def send_room_invite(self, room_id: RoomId, contact_name: ContactName) -> None:
         user_id = self.map_contact_name(contact_name)
         room_member = await self.get_room_member(room_id, user_id)
         if room_member is None:
@@ -422,9 +455,11 @@ class MatrixASChatter:
             if _source == identity_display_name:
                 await cb(_source, channel_name, _message, _message_id)
 
+        space_identity = self.create_space_identity(identity)
+        space_info = await self.ensure_space(space_identity)
         room_identity = self.create_channel_identity(identity, channel_name)
-        room_info = await self.ensure_room(room_identity, handler)
-        await self.send_channel_invite(room_info.id, identity.name)
+        room_info = await self.ensure_room(space_info.id, room_identity, handler)
+        await self.send_room_invite(room_info.id, identity.name)
 
     async def send_channel(
         self, identity: Contact, source: DisplayName, message: Message, channel_name: ChannelName

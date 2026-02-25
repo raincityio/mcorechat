@@ -42,9 +42,6 @@ class Config:
     listen: tuple[str, int] = default_listen
     homeserver: HomeserverURL = default_homeserver
     contact_suffix: str | None = " [contact]"
-    enable_discovery_room: bool = True
-    discovery_channel_name: ChannelName = ChannelName("[discovery]")
-    enable_advertisement_room: bool = True
     advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
     command_channel_name: ChannelName = ChannelName("[command]")
     ssl: SSLConfig | None = None
@@ -63,7 +60,6 @@ class Config:
             "app_hs_token_path": Path,
             "app_namespace": AppNamespace,
             "listen": tuple,
-            "discovery_room_name": ChannelName,
             "advertisement_room_name": ChannelName,
             "ssl": SSLConfig.from_data,
             "contact_name_mappings": lambda x: {ContactName(k): parse_user_id(v) for k, v in x.items()},

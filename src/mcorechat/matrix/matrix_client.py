@@ -22,6 +22,7 @@ from mcorechat.matrix.common import (
     MatrixEvent,
     parse_user_id,
     RoomMembership,
+    DomainName,
 )
 from mcorechat.matrix.htmlutils import strip_html
 
@@ -113,12 +114,36 @@ class MatrixClient:
         data = await self._get(["joined_rooms"], as_user_id=as_user_id)
         return [RoomId(e) for e in data["joined_rooms"]]
 
-    async def create_room(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
+    # PUT /_matrix/client/v3/rooms/{space_id}/state/m.space.child/{child_room_id}
+    async def state_attach_child(
+        self, space_id: RoomId, child_room_id: RoomId, domain: DomainName, *, as_user_id: UserId | None = None
+    ):
+        payload = {"via": [domain]}
+        await self._put(
+            ["rooms", space_id, "state", "m.space.child", child_room_id], payload=payload, as_user_id=as_user_id
+        )
+
+    async def create_room(
+        self, name: RoomName, alias: RoomAlias, *, is_space: bool | None = None, as_user_id: UserId | None = None
+    ) -> RoomId:
         payload: dict[str, Any] = {
             "name": name,
             "room_alias_name": alias.name,
             "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
             "preset": "public_chat",  # default preset
+        }
+        if is_space:
+            payload["creation_content"] = {"type": "m.space"}
+        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
+        return RoomId(data["room_id"])
+
+    async def create_space(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
+        payload = {
+            "name": name,
+            "room_alias_name": alias.name,
+            "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
+            "preset": "public_chat",  # default preset
+            "creation_content": {"type": "m.space"},
         }
         data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
         return RoomId(data["room_id"])

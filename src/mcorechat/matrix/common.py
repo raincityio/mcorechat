@@ -145,7 +145,7 @@ class MatrixAPIError(Exception):
 
 class MatrixJSONEncoder(CommonJSONEncoder):
     def default(self, o: Any) -> Any:
-        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName):
+        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName, DomainName):
             return str(o)
         return super().default(o)
 
