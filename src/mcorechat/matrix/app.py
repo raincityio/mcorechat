@@ -31,6 +31,7 @@ from mcorechat.matrix.common import (
     SecretText,
     parse_user_id,
     sha256,
+    RoomVisibility,
 )
 from mcorechat.matrix.config import Config
 from mcorechat.matrix.matrix_client import MatrixClient, parse_member_event
@@ -317,7 +318,9 @@ class MatrixASChatter:
             return self.room_manager.get(room_alias=identity.alias)
         room_id = await self.client.get_room_id_by_alias(identity.alias)
         if room_id is None:
-            room_id = await self.client.create_room(identity.name, identity.alias, is_space=True)
+            room_id = await self.client.create_room(
+                identity.name, identity.alias, visibility=RoomVisibility.PUBLIC, preset="public_chat", is_space=True
+            )
         else:
             test_room_name = await self.client.get_room_name(room_id)
             if identity.name != test_room_name:
@@ -330,23 +333,40 @@ class MatrixASChatter:
         self.room_manager.add(room_info)
         return room_info
 
+    # TODO ensure that the is_direct and space properties are consistent with the server?
     async def ensure_room(
         self,
         space_id: RoomId,
         identity: RoomIdentity,
         handler: RoomHandler,
+        *,
+        is_direct: bool | None = None,
+        as_user_id: UserId | None = None,
     ) -> RoomInfo:
+        # public_chat
         if identity.alias in self.room_manager:
             return self.room_manager.get(room_alias=identity.alias)
         room_id = await self.client.get_room_id_by_alias(identity.alias)
         if room_id is None:
-            room_id = await self.client.create_room(identity.name, identity.alias)
+            if is_direct is None:
+                visibility = RoomVisibility.PRIVATE
+                preset = "trusted_private_chat"
+            else:
+                visibility = RoomVisibility.PUBLIC
+                preset = "public_chat"
+            room_id = await self.client.create_room(
+                identity.name,
+                identity.alias,
+                visibility=visibility,
+                preset=preset,
+                is_direct=is_direct,
+                as_user_id=as_user_id,
+            )
+            await self.client.state_attach_child(space_id, room_id, self.config.domain)
         else:
-            test_room_name = await self.client.get_room_name(room_id)
+            test_room_name = await self.client.get_room_name(room_id, as_user_id=as_user_id)
             if identity.name != test_room_name:
-                await self.client.set_room_name(room_id, identity.name)
-        # TODO potentially unnecessary attach
-        await self.client.state_attach_child(space_id, room_id, self.config.domain)
+                await self.client.set_room_name(room_id, identity.name, as_user_id=as_user_id)
         room_info = RoomInfo(room_id, identity.alias, identity.name, handler)
         self.room_manager.add(room_info)
         return room_info
@@ -382,24 +402,6 @@ class MatrixASChatter:
 
     async def add_contact(self, identity: Contact, contact: Contact, cb: DirectCallback) -> None:
         identity_display_name = DisplayName(str(identity.name))
-        user_identity = self.create_user_identity(identity, contact)
-        direct_identity = self.create_direct_identity(identity, contact)
-        await self.ensure_user(user_identity)
-        room_id = await self.client.get_room_id_by_alias(direct_identity.alias)
-        if room_id is None:
-            room_id = await self.client.create_direct_room(
-                direct_identity.name, direct_identity.alias, as_user_id=user_identity.id
-            )
-        else:
-            test_room_name = await self.client.get_room_name(room_id, as_user_id=user_identity.id)
-            if direct_identity.name != test_room_name:
-                await self.client.set_room_name(room_id, direct_identity.name, as_user_id=user_identity.id)
-        self.contact_manager.add(ContactInfo(contact, room_id, direct_identity.alias, user_identity.id))
-        # TODO
-        space_identity = self.create_space_identity(identity)
-        space_info = await self.ensure_space(space_identity)
-        await self.client.state_attach_child(space_info.id, room_id, self.config.domain)
-        await self.ensure_room_member_joined(space_info.id, user_identity.id)
 
         async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId) -> None:
             _room_member = await self.get_room_member(_room_id, _source_user_id, as_user_id=user_identity.id)
@@ -412,7 +414,13 @@ class MatrixASChatter:
             if _source == identity_display_name:
                 await cb(_source, contact.public_key, _message, _message_id)
 
-        self.room_manager.add(RoomInfo(room_id, direct_identity.alias, direct_identity.name, handler))
+        user_identity = self.create_user_identity(identity, contact)
+        await self.ensure_user(user_identity)
+        space_identity = self.create_space_identity(identity)
+        space_info = await self.ensure_space(space_identity)
+        await self.ensure_room_member_joined(space_info.id, user_identity.id)
+        direct_identity = self.create_direct_identity(identity, contact)
+        await self.ensure_room(space_info.id, direct_identity, handler, is_direct=True, as_user_id=user_identity.id)
 
     async def send_direct(self, identity: Contact, source: Contact, destination: ContactName, message: Message) -> None:
         source_user_id = self.create_user_id(identity, contact=source)

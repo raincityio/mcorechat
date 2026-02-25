@@ -124,38 +124,27 @@ class MatrixClient:
         )
 
     async def create_room(
-        self, name: RoomName, alias: RoomAlias, *, is_space: bool | None = None, as_user_id: UserId | None = None
+        self,
+        name: RoomName,
+        alias: RoomAlias,
+        visibility: RoomVisibility,
+        preset: str,
+        *,
+        is_direct: bool | None = None,
+        is_space: bool | None = None,
+        as_user_id: UserId | None = None,
     ) -> RoomId:
+
         payload: dict[str, Any] = {
             "name": name,
             "room_alias_name": alias.name,
-            "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
-            "preset": "public_chat",  # default preset
+            "visibility": visibility.value,
+            "preset": preset,
         }
         if is_space:
             payload["creation_content"] = {"type": "m.space"}
-        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
-        return RoomId(data["room_id"])
-
-    async def create_space(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
-        payload = {
-            "name": name,
-            "room_alias_name": alias.name,
-            "visibility": RoomVisibility.PUBLIC.value,  # "private" or "public"
-            "preset": "public_chat",  # default preset
-            "creation_content": {"type": "m.space"},
-        }
-        data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
-        return RoomId(data["room_id"])
-
-    async def create_direct_room(self, name: RoomName, alias: RoomAlias, *, as_user_id: UserId | None = None) -> RoomId:
-        payload: dict[str, Any] = {
-            "name": name,
-            "room_alias_name": alias.name,
-            "visibility": RoomVisibility.PRIVATE.value,
-            "preset": "trusted_private_chat",
-            "is_direct": True,
-        }
+        if is_direct:
+            payload["is_direct"] = True
         data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
         return RoomId(data["room_id"])
 
