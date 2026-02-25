@@ -22,14 +22,12 @@ handlers:
 #    encoding: utf-8
 
 root:
-  level: DEBUG
+  level: INFO
   handlers: [ console ]
 
 loggers:
-  aiohttp.access:
-    level: DEBUG
-  meshcore:
-    level: DEBUG
+  #  aiohttp.access:
+  #    level: DEBUG
   mcorechat:
     level: DEBUG
 #  nio:

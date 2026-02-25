@@ -222,7 +222,7 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
             event = await event_q.get()
             backoff = iter(backoff_iter())
             while True:
-                logger.info(f"Processing event: {event}")
+                logger.debug(f"Processing event: {event}")
                 try:
                     match event.type:
                         case EventType.MESSAGES_WAITING:

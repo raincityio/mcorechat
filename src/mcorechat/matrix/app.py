@@ -155,8 +155,8 @@ class MatrixASChatter:
         self.contact_manager = ContactManager()
         self.room_manager = RoomManager()
         # this is a cache, but is updated with transactions, so mostly correct
-        self.room_members: dict[tuple[RoomId, UserId], RoomMember] = {}
-        self.user_cache: dict[UserId, DisplayName] = {}
+        self.room_members: dict[tuple[RoomId, UserId], RoomMember] = {}  # unbounded
+        self.user_cache: dict[UserId, DisplayName] = {}  # unbounded
         self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(config.homeserver, get_secret(config.app_as_token, config.app_as_token_path))
         self.app_hs_token = get_secret(config.app_hs_token, config.app_hs_token_path)
@@ -277,7 +277,7 @@ class MatrixASChatter:
         host, port = self.config.listen
         site = web.TCPSite(runner, host=host, port=port, ssl_context=ssl_context)
         await site.start()
-        logger.debug(f"Started server on {host}:{port}")
+        logger.info(f"Started server on {host}:{port}")
 
     ## Interface
     async def add_command_callback(self, identity: Contact, cb: CommandCallback):
@@ -349,6 +349,7 @@ class MatrixASChatter:
                     raise Exception(f"Unknown membership: {room_member.membership}")
 
     async def add_contact(self, identity: Contact, contact: Contact, cb: DirectCallback) -> None:
+        identity_display_name = DisplayName(str(identity.name))
         user_identity = self.create_user_identity(identity, contact)
         direct_identity = self.create_direct_identity(identity, contact)
         await self.ensure_user(user_identity)
@@ -371,7 +372,8 @@ class MatrixASChatter:
                 _source = DisplayName(str(_source_user_id.name))
             else:
                 _source = _room_member.display_name
-            await cb(_source, contact.public_key, _message, _message_id)
+            if _source == identity_display_name:
+                await cb(_source, contact.public_key, _message, _message_id)
 
         self.room_manager.add(RoomInfo(room_id, direct_identity.alias, direct_identity.name, handler))
         if self.config.enable_discovery_room:
@@ -407,6 +409,7 @@ class MatrixASChatter:
         channel_name: ChannelName,
         cb: ChannelCallback,
     ) -> None:
+        identity_display_name = DisplayName(str(identity.name))
 
         async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId):
             _room_member = await self.get_room_member(_room_id, _source_user_id)
@@ -416,7 +419,8 @@ class MatrixASChatter:
                 _source = DisplayName(str(_source_user_id.name))
             else:
                 _source = _room_member.display_name
-            await cb(_source, channel_name, _message, _message_id)
+            if _source == identity_display_name:
+                await cb(_source, channel_name, _message, _message_id)
 
         room_identity = self.create_channel_identity(identity, channel_name)
         room_info = await self.ensure_room(room_identity, handler)
