@@ -9,11 +9,11 @@ import shlex
 import signal
 from argparse import ArgumentError, ArgumentParser
 from asyncio import Future, Task, TaskGroup, AbstractEventLoop, CancelledError
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from aiohttp import ClientError
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
@@ -28,7 +28,6 @@ from mcorechat.common import (
     Message,
     MessageId,
     ContactType,
-    backoff_iter,
     JSONEncoder,
     DisplayName,
 )
@@ -37,7 +36,6 @@ from mcorechat.matrix.app import MatrixASChatter
 
 logger = logging.getLogger(__name__)
 
-MAXISH_MESSAGE_LENGTH = 156
 MAX_CHANNELS = 40
 
 
@@ -159,7 +157,13 @@ class MeshCorePlus:
             raise MeshcoreError(f"send_msg({destination}, {message})", result.payload)
 
 
-async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, chatter: Chatter):
+async def main_loop(
+    config: Config,
+    self_contact: Contact,
+    mcp: MeshCorePlus,
+    chatter: Chatter,
+    contact_handler: Callable[[Contact], Awaitable[None]],
+) -> None:
 
     async def handle_contact_msg_recv(event: Event):
         public_key_prefix = PublicKeyPrefix(event.payload["pubkey_prefix"])
@@ -207,11 +211,11 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
-        assert False  # TODO
         if contact is not None:
-            await chatter.add_contact(self_contact, contact, None)
+            await contact_handler(contact)
 
     async def event_loop():
+        # max size one so we don't drop too much if we suddenly exit
         event_q: asyncio.Queue[Event] = asyncio.Queue()
         mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, event_q.put)
         mcp.meshcore.subscribe(EventType.ADVERTISEMENT, event_q.put)
@@ -220,27 +224,20 @@ async def main_loop(config: Config, self_contact: Contact, mcp: MeshCorePlus, ch
         await handle_messages_waiting(event_q)
         while True:
             event = await event_q.get()
-            backoff = iter(backoff_iter())
-            while True:
-                logger.debug(f"Processing event: {event}")
-                try:
-                    match event.type:
-                        case EventType.MESSAGES_WAITING:
-                            await handle_messages_waiting(event_q)
-                        case EventType.ADVERTISEMENT:
-                            await handle_advertisement(event)
-                        case EventType.NEW_CONTACT:
-                            await handle_new_contact(event)
-                        case EventType.CONTACT_MSG_RECV:
-                            await handle_contact_msg_recv(event)
-                        case EventType.CHANNEL_MSG_RECV:
-                            await handle_channel_msg_recv(event)
-                        case _:
-                            logger.warning(f"Unexpected event: {event}")
-                    break
-                except ClientError as e:
-                    logging.error(e)
-                    await asyncio.sleep(next(backoff))
+            logger.debug(f"Processing event: {event}")
+            match event.type:
+                case EventType.MESSAGES_WAITING:
+                    await handle_messages_waiting(event_q)
+                case EventType.ADVERTISEMENT:
+                    await handle_advertisement(event)
+                case EventType.NEW_CONTACT:
+                    await handle_new_contact(event)
+                case EventType.CONTACT_MSG_RECV:
+                    await handle_contact_msg_recv(event)
+                case EventType.CHANNEL_MSG_RECV:
+                    await handle_channel_msg_recv(event)
+                case _:
+                    logger.warning(f"Unexpected event: {event}")
 
     await event_loop()
 
@@ -290,7 +287,6 @@ async def amain():
     self_display_name = DisplayName(meshcore.self_info["name"])
     self_contact = Contact(self_contact_name, PublicKey(meshcore.self_info["public_key"]), ContactType.CLIENT)
     chatter: Chatter = MatrixASChatter(config.matrix)
-    await chatter.init(self_contact)  # TODO what if synapse is down
     mcp = MeshCorePlus(meshcore)
 
     fault: Future[None] = Future()
@@ -350,12 +346,12 @@ async def amain():
             # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
             return
-        if len(message) > MAXISH_MESSAGE_LENGTH:
-            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {MAXISH_MESSAGE_LENGTH}")
+        if len(message) > config.maxish_message_length:
+            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
         channel = await mcp.get_channel(name=channel_name)
         if channel is None:
             raise InvalidRequestException(f"Unknown channel: {channel_name}")
-        if config.enable_send:
+        if config.dev_enable_send:
             logger.debug(f"send message {message} {message_id}")
             await mcp.send_chan_msg(channel.idx, message)
         else:
@@ -367,42 +363,43 @@ async def amain():
             # FIXME illegal state
             logger.warning(f"!send message {message} {message_id}")
             return
-        if len(message) > MAXISH_MESSAGE_LENGTH:
-            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {MAXISH_MESSAGE_LENGTH}")
-        if config.enable_send:
+        if len(message) > config.maxish_message_length:
+            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
+        if config.dev_enable_send:
             logger.debug(f"send message {destination} {message}")
             await mcp.send_msg(destination, message)
         else:
             logger.debug(f"!send message {destination} {message}")
 
-    async def seed_contacts():
+    async def contact_handler(_contact: Contact):
+        if _contact.type == ContactType.CLIENT:
+            await chatter.add_contact(self_contact, _contact, direct_callback)
+
+    async def add_contacts():
         async with TaskGroup() as g:
             s = asyncio.Semaphore(16)
             async for contact in mcp.iter_contacts():
-                if contact.type != ContactType.CLIENT:
-                    continue
 
                 async def _update_contact(_contact: Contact):
                     async with s:
-                        await chatter.add_contact(self_contact, _contact, direct_callback)
+                        await contact_handler(_contact)
 
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
-    # await chatter.add_direct_callback(self_display_name, direct_callback)
+    # TODO consider spinning if synapse goes down?
+    await chatter.init(self_contact)
 
     async for channel in mcp.iter_channels():
         await chatter.add_channel(self_contact, channel.name, channel_callback)
 
     await chatter.add_command_callback(self_contact, command_callback)
 
-    # TODO what if synapse is down
-    if config.seed_contacts:
-        await seed_contacts()
+    await add_contacts()
 
     async with TaskGroup() as g:
         g.create_task(chatter.run())
-        g.create_task(main_loop(config, self_contact, mcp, chatter))
+        g.create_task(main_loop(config, self_contact, mcp, chatter, contact_handler))
         await fault
 
 

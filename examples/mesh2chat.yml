@@ -18,5 +18,5 @@ matrix:
 logging_config_path: ~/PycharmProjects/mesh2irc/examples/mesh2chat_logging.yml
 #seed_contacts: true
 #seed_contacts: false
-enable_send: true
+dev_enable_send: true
 advertise_known: true

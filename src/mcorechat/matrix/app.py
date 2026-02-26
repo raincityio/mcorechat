@@ -100,6 +100,7 @@ class RoomInfo:
     alias: RoomAlias
     name: RoomName
     handler: RoomHandler
+    admin_id: UserId
 
 
 class UnknownRoomException(Exception):
@@ -233,7 +234,7 @@ class MatrixASChatter:
     ## Lifecycle
     async def init(self, contact: Contact) -> None:
         # FIXME this doesn't work
-        # synapse throws an exception in its log
+        # synapse throws an exception in its log, i think because app_user isn't actually registered
         # await self.client.set_display_name(self.app_user, DisplayName("MeshBot"))
 
         space_identity = self.create_space_identity(contact)
@@ -329,7 +330,7 @@ class MatrixASChatter:
         async def handler(*_args: Any) -> None:
             assert False
 
-        room_info = RoomInfo(room_id, identity.alias, identity.name, handler)
+        room_info = RoomInfo(room_id, identity.alias, identity.name, handler, self.app_user)
         self.room_manager.add(room_info)
         return room_info
 
@@ -367,7 +368,8 @@ class MatrixASChatter:
             test_room_name = await self.client.get_room_name(room_id, as_user_id=as_user_id)
             if identity.name != test_room_name:
                 await self.client.set_room_name(room_id, identity.name, as_user_id=as_user_id)
-        room_info = RoomInfo(room_id, identity.alias, identity.name, handler)
+        admin_id = self.app_user if as_user_id is None else as_user_id
+        room_info = RoomInfo(room_id, identity.alias, identity.name, handler, admin_id)
         self.room_manager.add(room_info)
         return room_info
 
@@ -514,12 +516,13 @@ class MatrixASChatter:
     def is_app_user_id(self, user_id: UserId):
         return user_id.name.startswith(self.config.app_namespace)
 
-    # TODO this won't work for contact rooms
-    async def send_error(self, room_id: RoomId, msg: str, *, cause: str | None = None) -> None:
+    async def send_error(
+        self, room_id: RoomId, msg: str, *, cause: str | None = None, as_user_id: UserId | None = None
+    ) -> None:
         if cause is None:
-            await self.client.send_message(room_id, HTMLMessage(f"<i><b>{msg}</b></i>"))
+            await self.client.send_message(room_id, HTMLMessage(f"<i><b>{msg}</b></i>"), as_user_id=as_user_id)
         else:
-            await self.client.send_message(room_id, HTMLMessage(f"<i><b>{msg}:</b> {cause}</i>"))
+            await self.client.send_message(room_id, HTMLMessage(f"<i><b>{msg}:</b> {cause}</i>"), as_user_id=as_user_id)
 
     # invite will throw 403 (forbidden) if the user was already invited or is in the room
     async def invite_user(
@@ -565,7 +568,7 @@ class MatrixASChatter:
         try:
             await room_info.handler(room_id, source_user_id, message, message_id)
         except Exception as e:
-            await self.send_error(room_id, "Failed to send message", cause=str(e))
+            await self.send_error(room_id, "Failed to send message", cause=str(e), as_user_id=room_info.admin_id)
 
     async def transactions(self, request: Request):
         try:

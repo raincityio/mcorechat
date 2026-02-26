@@ -47,9 +47,9 @@ class Config:
     meshcore: MeshCoreConfig = MeshCoreConfig()
     loglevel: Optional[int] = None
     logging_config_path: Path = default_logging_config_path
-    seed_contacts: bool = True
-    enable_send: bool = True
+    dev_enable_send: bool = True
     advertise_known: bool = False
+    maxish_message_length: int = 156
 
     @staticmethod
     def from_data(data: dict[str, Any]) -> "Config":

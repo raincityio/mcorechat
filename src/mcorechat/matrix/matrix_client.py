@@ -6,6 +6,7 @@ from urllib.parse import quote
 import aiohttp
 
 from mcorechat.common import HTMLMessage, Message
+from mcorechat.matrix.client_common import client_attempt
 from mcorechat.matrix.common import (
     HomeserverURL,
     SecretText,
@@ -251,6 +252,11 @@ class MatrixClient:
         return await self._http_client_verb("get", *args, **kwargs)
 
     async def _http_client_verb(
+        self, verb: str, path: list[str], *, as_user_id: UserId | None = None, payload: dict[str, Any] | None = None
+    ):
+        return await client_attempt(self._http_client_verb_, verb, path, as_user_id=as_user_id, payload=payload)
+
+    async def _http_client_verb_(
         self,
         verb: str,
         path: list[str],
