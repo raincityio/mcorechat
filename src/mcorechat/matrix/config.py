@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcorechat.common import ChannelName, ContactName
+from mcorechat.common import ContactName
 from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserId, UserName, AppNamespace, parse_user_id
 
 default_listen = ("127.0.0.1", 9000)
@@ -42,8 +42,6 @@ class Config:
     listen: tuple[str, int] = default_listen
     homeserver: HomeserverURL = default_homeserver
     contact_suffix: str | None = " [contact]"
-    advertisement_channel_name: ChannelName = ChannelName("[advertisements]")
-    command_channel_name: ChannelName = ChannelName("[command]")
     ssl: SSLConfig | None = None
     dev_soft_fail: bool = False
     contact_name_mappings: dict[ContactName, UserId] = dataclasses.field(default_factory=dict[ContactName, UserId])
@@ -60,7 +58,6 @@ class Config:
             "app_hs_token_path": Path,
             "app_namespace": AppNamespace,
             "listen": tuple,
-            "advertisement_room_name": ChannelName,
             "ssl": SSLConfig.from_data,
             "contact_name_mappings": lambda x: {ContactName(k): parse_user_id(v) for k, v in x.items()},
         }

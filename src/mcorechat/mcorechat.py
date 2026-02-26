@@ -17,7 +17,7 @@ import yaml
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mcorechat.chatter import Chatter
+from mcorechat.chatter import Chatter, ChatterManager
 from mcorechat.common import (
     Contact,
     Channel,
@@ -32,7 +32,7 @@ from mcorechat.common import (
     DisplayName,
 )
 from mcorechat.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
-from mcorechat.matrix.app import MatrixASChatter
+from mcorechat.matrix.app import MatrixChatterManager
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,8 @@ async def main_loop(
     self_contact: Contact,
     mcp: MeshCorePlus,
     chatter: Chatter,
-    contact_handler: Callable[[Contact], Awaitable[None]],
+    contact_handler: Callable[[Chatter, Contact], Awaitable[None]],
+    advertisements_channel: ChannelName,
 ) -> None:
 
     async def handle_contact_msg_recv(event: Event):
@@ -173,7 +174,7 @@ async def main_loop(
             logger.warning(f"Unknown contact: {event}")
         else:
             message = Message(event.payload["text"])
-            await chatter.send_direct(self_contact, contact, self_contact.name, message)
+            await chatter.send_direct(contact, message)
 
     async def handle_channel_msg_recv(event: Event):
         user_name_raw, rest = str(event.payload["text"]).split(":", 1)
@@ -183,7 +184,7 @@ async def main_loop(
         if channel is None:
             logger.warning(f"Unknown channel: {event}")
         else:
-            await chatter.send_channel(self_contact, display_name, message, channel.name)
+            await chatter.send_channel(display_name, channel.name, message)
 
     async def handle_messages_waiting(event_q: asyncio.Queue[Event]):
         while True:
@@ -206,13 +207,17 @@ async def main_loop(
         else:
             advertise = config.advertise_known
         if advertise:
-            await chatter.advertise(self_contact, public_key, contact=contact)
+            if contact is None:
+                source = DisplayName("Unknown")
+            else:
+                source = contact
+            await chatter.send_channel(source, advertisements_channel, Message(str(public_key)))
 
     async def handle_new_contact(_event: Event):
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
         if contact is not None:
-            await contact_handler(contact)
+            await contact_handler(chatter, contact)
 
     async def event_loop():
         # max size one so we don't drop too much if we suddenly exit
@@ -286,7 +291,7 @@ async def amain():
     self_contact_name = ContactName(meshcore.self_info["name"])
     self_display_name = DisplayName(meshcore.self_info["name"])
     self_contact = Contact(self_contact_name, PublicKey(meshcore.self_info["public_key"]), ContactType.CLIENT)
-    chatter: Chatter = MatrixASChatter(config.matrix)
+    chatter_manager: ChatterManager = MatrixChatterManager(config.matrix)
     mcp = MeshCorePlus(meshcore)
 
     fault: Future[None] = Future()
@@ -312,7 +317,9 @@ async def amain():
                 raise RuntimeError(message)
             raise RuntimeError(f"Exited with status {status}")
 
-    async def command_callback(source: DisplayName, message: Message) -> list[str]:
+    async def command_callback(
+        source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
+    ) -> list[str]:
         cmd = shlex.split(str(message))
 
         parser = ThrowingArgumentParser(exit_on_error=False)
@@ -341,7 +348,9 @@ async def amain():
             raise InvalidRequestException(f"Unknown command: {cmd}")
 
     @fault_wrapper
-    async def channel_callback(source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId):
+    async def channel_callback(
+        source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
+    ) -> None:
         if source != self_display_name:
             # FIXME illegal state
             logger.debug(f"!send message {message} {message_id}")
@@ -371,35 +380,48 @@ async def amain():
         else:
             logger.debug(f"!send message {destination} {message}")
 
-    async def contact_handler(_contact: Contact):
+    async def contact_handler(_chatter: Chatter, _contact: Contact):
         if _contact.type == ContactType.CLIENT:
-            await chatter.add_contact(self_contact, _contact, direct_callback)
+            await _chatter.add_contact(_contact)
 
-    async def add_contacts():
+    async def add_contacts(_chatter: Chatter):
         async with TaskGroup() as g:
             s = asyncio.Semaphore(16)
             async for contact in mcp.iter_contacts():
 
                 async def _update_contact(_contact: Contact):
                     async with s:
-                        await contact_handler(_contact)
+                        await contact_handler(_chatter, _contact)
 
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
     # TODO consider spinning if synapse goes down?
-    await chatter.init(self_contact)
+    chatter = await chatter_manager.add_chatter(
+        self_contact,
+        channel_callback=channel_callback,
+        direct_callback=direct_callback,
+    )
 
     async for channel in mcp.iter_channels():
-        await chatter.add_channel(self_contact, channel.name, channel_callback)
+        await chatter.add_channel(channel.name)
 
-    await chatter.add_command_callback(self_contact, command_callback)
+    @fault_wrapper
+    async def handle_advertisements(*_: Any):
+        raise InvalidRequestException(f"Advertisements does not support messaging")
 
-    await add_contacts()
+    advertisements_channel = ChannelName("[advertisements]")
+    await chatter.add_channel(advertisements_channel, callback=handle_advertisements)
+
+    command_channel = ChannelName("[command]")
+    # TODO remove next ignore once i fix the pattern
+    await chatter.add_channel(command_channel, callback=command_callback)  # pyright: ignore [reportArgumentType]
+
+    await add_contacts(chatter)
 
     async with TaskGroup() as g:
-        g.create_task(chatter.run())
-        g.create_task(main_loop(config, self_contact, mcp, chatter, contact_handler))
+        g.create_task(chatter_manager.run())
+        g.create_task(main_loop(config, self_contact, mcp, chatter, contact_handler, advertisements_channel))
         await fault
 
 
