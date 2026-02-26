@@ -317,35 +317,38 @@ async def amain():
                 raise RuntimeError(message)
             raise RuntimeError(f"Exited with status {status}")
 
-    async def command_callback(
-        source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
-    ) -> list[str]:
-        cmd = shlex.split(str(message))
+    def command_callback(_command_channel: ChannelName, _chatter: Chatter):
+        async def _callback(source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId):
+            cmd = shlex.split(str(message))
 
-        parser = ThrowingArgumentParser(exit_on_error=False)
-        subparsers = parser.add_subparsers(dest="command")
-        subparsers.add_parser("self-info")
-        subparser = subparsers.add_parser("get-channel")
-        subparser.add_argument("--name", required=True)
-        subparser = subparsers.add_parser("send-advert")
-        subparser.add_argument("--flood", action="store_true")
-        try:
-            args = parser.parse_args(args=cmd)
-        except ArgumentError as e:
-            raise InvalidRequestException(str(e)) from e
+            parser = ThrowingArgumentParser(exit_on_error=False)
+            subparsers = parser.add_subparsers(dest="command")
+            subparsers.add_parser("self-info")
+            subparser = subparsers.add_parser("get-channel")
+            subparser.add_argument("--name", required=True)
+            subparser = subparsers.add_parser("send-advert")
+            subparser.add_argument("--flood", action="store_true")
+            try:
+                args = parser.parse_args(args=cmd)
+            except ArgumentError as e:
+                raise InvalidRequestException(str(e)) from e
 
-        if args.command is None:
-            raise InvalidRequestException(f"Invalid command: {cmd}")
-        elif args.command == "self-info":
-            return [json.dumps(meshcore.self_info)]
-        elif args.command == "get-channel":
-            channel = await mcp.get_channel(name=ChannelName(args.name))
-            return [json.dumps(channel, cls=JSONEncoder)]
-        elif args.command == "send-advert":
-            advert = await meshcore.commands.send_advert(flood=args.flood)
-            return [json.dumps(advert, cls=JSONEncoder)]
-        else:
-            raise InvalidRequestException(f"Unknown command: {cmd}")
+            if args.command is None:
+                raise InvalidRequestException(f"Invalid command: {cmd}")
+            elif args.command == "self-info":
+                output = [json.dumps(meshcore.self_info)]
+            elif args.command == "get-channel":
+                channel = await mcp.get_channel(name=ChannelName(args.name))
+                output = [json.dumps(channel, cls=JSONEncoder)]
+            elif args.command == "send-advert":
+                advert = await meshcore.commands.send_advert(flood=args.flood)
+                output = [json.dumps(advert, cls=JSONEncoder)]
+            else:
+                raise InvalidRequestException(f"Unknown command: {cmd}")
+            for line in output:
+                await _chatter.send_channel(self_contact, _command_channel, Message(line))
+
+        return _callback
 
     @fault_wrapper
     async def channel_callback(
@@ -396,7 +399,6 @@ async def amain():
                 g.create_task(_update_contact(_contact=contact))
 
     # Set up and run
-    # TODO consider spinning if synapse goes down?
     chatter = await chatter_manager.add_chatter(
         self_contact,
         channel_callback=channel_callback,
@@ -414,8 +416,7 @@ async def amain():
     await chatter.add_channel(advertisements_channel, callback=handle_advertisements)
 
     command_channel = ChannelName("[command]")
-    # TODO remove next ignore once i fix the pattern
-    await chatter.add_channel(command_channel, callback=command_callback)  # pyright: ignore [reportArgumentType]
+    await chatter.add_channel(command_channel, callback=command_callback(command_channel, chatter))
 
     await add_contacts(chatter)
 

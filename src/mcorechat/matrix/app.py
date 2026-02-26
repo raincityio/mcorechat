@@ -162,9 +162,7 @@ class Vanity:
     ) -> UserId:
         match (display_name, contact):
             case (DisplayName(), None):
-                user_name = UserName(
-                    f"{self.config.app_namespace}.channel.{identity.public_key}.{sha256(str(display_name))}"
-                )
+                user_name = UserName(f"{self.config.app_namespace}.channel.{sha256(str(display_name))}")
                 return UserId(user_name, self.config.domain)
             case (None, Contact()):
                 user_name = UserName(f"{self.config.app_namespace}.contact.{identity.public_key}.{contact.public_key}")
@@ -309,9 +307,14 @@ class MatrixChatter:
         destination_room_member = await self.mcm.get_room_member(
             room_info.id, destination_user_id, as_user_id=source_user_id
         )
-        if destination_room_member is not None:
-            if destination_room_member.membership == RoomMembership.LEAVE:
-                await self.mcm.invite_user(room_info.id, destination_user_id, as_user_id=source_user_id)
+        if destination_room_member is None:
+            invite = True
+        elif destination_room_member.membership not in (RoomMembership.JOIN, RoomMembership.INVITE):
+            invite = True
+        else:
+            invite = False
+        if invite:
+            await self.mcm.invite_user(room_info.id, destination_user_id, as_user_id=source_user_id)
         await self.client.send_message(room_info.id, message, as_user_id=source_user_id)
 
     async def send_channel(self, source: Contact | DisplayName, channel_name: ChannelName, message: Message) -> None:

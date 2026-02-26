@@ -48,6 +48,14 @@ class DisplayName:
 
 
 @dataclasses.dataclass(frozen=True)
+class ChannelAlias:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
 class ContactName:
     value: str
 
