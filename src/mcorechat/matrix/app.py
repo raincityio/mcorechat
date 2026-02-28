@@ -407,7 +407,7 @@ class MatrixChatterManager:
         await runner.setup()
 
         if (self.config.ssl is not None) and self.config.ssl.enabled:
-            ssl_context = ssl.create_default_context()
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             ssl_context.load_cert_chain(self.config.ssl.certfile, self.config.ssl.keyfile)
         else:
             ssl_context = None
@@ -530,8 +530,8 @@ class MatrixChatterManager:
             await self.transactions_(request)
             return web.json_response({})
         except Exception as e:
+            logger.exception(e)
             if self.config.dev_soft_fail:
-                logger.exception(e)
                 return web.json_response({})
             return web.json_response({}, status=500)
 

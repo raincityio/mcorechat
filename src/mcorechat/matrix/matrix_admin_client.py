@@ -71,7 +71,6 @@ class MatrixAdminClient:
         params = {} if params is None else params
         if as_user_id is not None:
             params["user_id"] = str(as_user_id)
-        payload = {} if payload is None else payload
         v = 1 if v is None else v
         full_path = ["_synapse", "admin", f"v{v}"] + path
         quoted_path = "/".join(quote(str(e)) for e in full_path)
@@ -85,10 +84,12 @@ class MatrixAdminClient:
         method = verbs.get(verb)
         if method is None:
             raise Exception(f"Unknown verb: {verb}")
+        kwargs: dict[str, Any] = {"params": params}
+        if payload is not None:
+            kwargs["json"] = payload
         async with method(
             url,
-            json=payload,
-            params=params,
+            **kwargs,
         ) as resp:
             if resp.status != 200:
                 data = await resp.json()

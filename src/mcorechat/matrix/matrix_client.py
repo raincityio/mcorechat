@@ -151,8 +151,7 @@ class MatrixClient:
 
     # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.power_levels
     async def get_room_power_levels(self, room_id: RoomId, *, as_user_id: UserId | None = None):
-        data = await self._get(["rooms", room_id, "state", "m.room.power_levels"], as_user_id=as_user_id)
-        print(data)
+        return await self._get(["rooms", room_id, "state", "m.room.power_levels"], as_user_id=as_user_id)
 
     async def delete_room_alias(self, alias: RoomAlias) -> None:
         return await self._delete(["directory", "room", alias])
@@ -191,6 +190,8 @@ class MatrixClient:
                     "msgtype": "m.text",
                     "body": strip_html(body.value),
                 }
+            case _:
+                raise ValueError(f"Unexpected message type: {type(body)}")
 
         await self._put(
             ["rooms", room_id, "send", "m.room.message", txn_id],
@@ -238,8 +239,9 @@ class MatrixClient:
         payload = {"name": name}
         return await self._put(["rooms", room_id, "state", "m.room.name"], payload=payload, as_user_id=as_user_id)
 
+    # PUT /_matrix/client/v3/rooms/{roomId}/state/m.room.name
     async def delete_room_name(self, room_id: RoomId, *, as_user_id: UserId | None = None):
-        await self._delete(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
+        await self._put(["rooms", room_id, "state", "m.room.name"], payload={"name": ""}, as_user_id=as_user_id)
 
     async def get_room_name(self, room_id: RoomId, *, as_user_id: UserId | None = None):
         data = await self._get(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
@@ -279,7 +281,6 @@ class MatrixClient:
             params = {
                 "user_id": str(as_user_id),
             }
-        payload = {} if payload is None else payload
         full_path = ["_matrix", "client", "v3"] + path
         quoted_path = "/".join(quote(str(e)) for e in full_path)
         url = f"{self.homeserver}/{quoted_path}"
@@ -293,10 +294,12 @@ class MatrixClient:
         method = verbs.get(verb)
         if method is None:
             raise Exception(f"Unknown verb: {verb}")
+        kwargs: dict[str, Any] = {"params": params}
+        if payload is not None:
+            kwargs["json"] = payload
         async with method(
             url,
-            json=payload,
-            params=params,
+            **kwargs,
         ) as resp:
             if resp.status != 200:
                 data = await resp.json()
