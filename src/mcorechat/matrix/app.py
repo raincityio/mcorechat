@@ -601,13 +601,15 @@ class MatrixChatterManager:
         )
 
         # remove old contacts from the space and add all new ones
-        current_contacts = await self.get_room_members(space_id)
-        current_contact_set = {
-            e.user_id for e in current_contacts if self.is_app_user_id(e.user_id) and (e.user_id != self.app_user)
-        }
-        auth_contact_set = {self.vanity.create_user_id(identity, e) for e in contacts}
-        for old_contact in current_contact_set - auth_contact_set:
-            await self.client.leave_room(space_id, as_user_id=old_contact)
+        contact_set = {self.vanity.create_user_id(identity, e) for e in contacts}
+        for room_member in await self.get_room_members(space_id):
+            if not self.is_app_user_id(room_member.user_id):
+                continue
+            if room_member.user_id == self.app_user:
+                continue
+            if room_member.membership in (RoomMembership.JOIN, RoomMembership.INVITE):
+                if room_member.user_id not in contact_set:
+                    await self.client.leave_room(space_id, as_user_id=room_member.user_id)
 
         async with TaskGroup() as g:
 
@@ -617,7 +619,6 @@ class MatrixChatterManager:
             for contact in contacts:
                 g.create_task(add_contact(contact))
 
-        # TODO remove old channels?
         for channel in channels:
             await chatter.add_channel(channel)
 
