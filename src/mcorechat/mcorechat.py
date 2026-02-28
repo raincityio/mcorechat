@@ -9,7 +9,7 @@ import shlex
 import signal
 from argparse import ArgumentError, ArgumentParser
 from asyncio import Future, Task, TaskGroup, AbstractEventLoop, CancelledError
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -159,10 +159,9 @@ class MeshCorePlus:
 
 async def main_loop(
     config: Config,
-    self_contact: Contact,
     mcp: MeshCorePlus,
     chatter: Chatter,
-    contact_handler: Callable[[Chatter, Contact], Awaitable[None]],
+    contact_filter: Callable[[Contact], bool],
     advertisements_channel: ChannelName,
 ) -> None:
 
@@ -217,7 +216,8 @@ async def main_loop(
         public_key = PublicKey(_event.payload["public_key"])
         contact = await mcp.get_contact(public_key=public_key)
         if contact is not None:
-            await contact_handler(chatter, contact)
+            if contact_filter(contact):
+                await chatter.add_contact(contact)
 
     async def event_loop():
         # max size one so we don't drop too much if we suddenly exit
@@ -383,30 +383,26 @@ async def amain():
         else:
             logger.debug(f"!send message {destination} {message}")
 
-    async def contact_handler(_chatter: Chatter, _contact: Contact):
-        if _contact.type == ContactType.CLIENT:
-            await _chatter.add_contact(_contact)
-
-    async def add_contacts(_chatter: Chatter):
-        async with TaskGroup() as g:
-            s = asyncio.Semaphore(16)
-            async for contact in mcp.iter_contacts():
-
-                async def _update_contact(_contact: Contact):
-                    async with s:
-                        await contact_handler(_chatter, _contact)
-
-                g.create_task(_update_contact(_contact=contact))
-
     # Set up and run
+    def contact_filter(_contact: Contact):
+        return _contact.type == ContactType.CLIENT
+
+    contacts: list[Contact] = []
+    async for contact in mcp.iter_contacts():
+        if contact_filter(contact):
+            contacts.append(contact)
+
+    channels: list[ChannelName] = []
+    async for channel in mcp.iter_channels():
+        channels.append(channel.name)
+
     chatter = await chatter_manager.add_chatter(
         self_contact,
+        contacts=contacts,
+        channels=channels,
         channel_callback=channel_callback,
         direct_callback=direct_callback,
     )
-
-    async for channel in mcp.iter_channels():
-        await chatter.add_channel(channel.name)
 
     @fault_wrapper
     async def handle_advertisements(*_: Any):
@@ -418,11 +414,9 @@ async def amain():
     command_channel = ChannelName("[command]")
     await chatter.add_channel(command_channel, callback=command_callback(command_channel, chatter))
 
-    await add_contacts(chatter)
-
     async with TaskGroup() as g:
         g.create_task(chatter_manager.run())
-        g.create_task(main_loop(config, self_contact, mcp, chatter, contact_handler, advertisements_channel))
+        g.create_task(main_loop(config, mcp, chatter, contact_filter, advertisements_channel))
         await fault
 
 

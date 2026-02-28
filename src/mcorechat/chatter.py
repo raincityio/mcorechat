@@ -5,9 +5,9 @@ from typing import Protocol
 from mcorechat.common import ChannelName, Message, MessageId, Contact, PublicKey, DisplayName
 
 # source, destination, message, message_id
-DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
+type DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
 # source, destination, message, message_id
-ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
+type ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
 
 
 class UnknownChannelException(Exception):

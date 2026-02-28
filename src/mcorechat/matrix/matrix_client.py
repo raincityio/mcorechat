@@ -214,6 +214,15 @@ class MatrixClient:
     ):
         await self._post(["rooms", room_id, "leave"], as_user_id=as_user_id)
 
+    # POST /_matrix/client/v3/rooms/{roomId}/kick
+    async def kick_user(
+        self, room_id: RoomId, user_id: UserId, *, reason: str | None = None, as_user_id: UserId | None = None
+    ):
+        payload: dict[str, Any] = {"user_id": user_id}
+        if reason:
+            payload["reason"] = reason
+        await self._post(["rooms", room_id, "kick"], payload=payload, as_user_id=as_user_id)
+
     async def invite_user(
         self,
         room_id: RoomId,

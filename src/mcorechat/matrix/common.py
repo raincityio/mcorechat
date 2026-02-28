@@ -6,7 +6,7 @@ import hashlib
 import json
 from typing import Any
 
-from mcorechat.common import ChannelName, DisplayName
+from mcorechat.common import DisplayName
 from mcorechat.common import JSONEncoder as CommonJSONEncoder
 
 type MatrixEvent = dict[str, Any]
@@ -89,8 +89,16 @@ def sha256(text: str) -> str:
 
 
 @dataclasses.dataclass(frozen=True)
+class AliasName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
 class RoomAlias:
-    name: ChannelName
+    name: AliasName
     domain: DomainName
 
     def __str__(self):
@@ -103,7 +111,7 @@ class RoomAlias:
 def parse_room_alias(raw: str):
     assert raw.startswith("#")
     raw_name, raw_domain = raw[1:].split(":", 1)
-    return RoomAlias(ChannelName(raw_name), DomainName(raw_domain))
+    return RoomAlias(AliasName(raw_name), DomainName(raw_domain))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -145,7 +153,7 @@ class MatrixAPIError(Exception):
 
 class MatrixJSONEncoder(CommonJSONEncoder):
     def default(self, o: Any) -> Any:
-        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName, DomainName):
+        if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName, DomainName, AliasName):
             return str(o)
         return super().default(o)
 
