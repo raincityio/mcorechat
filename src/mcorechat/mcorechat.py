@@ -275,7 +275,7 @@ async def amain():
         config_data = {}
     if args.d:
         config_data["loglevel"] = "DEBUG"
-    config = Config.from_data(config_data)
+    config = Config.from_data(args.c.parent, config_data)
 
     try:
         logging_config_data = yaml.load(config.logging_config_path.read_text(), Loader=yaml.FullLoader)

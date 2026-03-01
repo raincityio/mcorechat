@@ -1,11 +1,11 @@
 import dataclasses
-import json
 import logging
 import ssl
 from asyncio import TaskGroup
 from collections.abc import Callable, Awaitable
 from pathlib import Path
 
+import yaml
 from aiohttp import web
 from aiohttp.web_request import Request
 
@@ -41,13 +41,13 @@ type EventHandler = Callable[[MatrixEvent], Awaitable[None]]
 logger = logging.getLogger(__name__)
 
 
-def get_secret(secret: SecretText | None, secret_path: Path | None) -> SecretText:
+def get_secret(key_type: str, secret: SecretText | None, secret_path: Path | None) -> SecretText:
     match (secret, secret_path):
         case (SecretText(), None):
             return secret
         case (None, Path()):
-            value = json.loads(secret_path.read_text())
-            return SecretText(value)
+            value = yaml.load(secret_path.read_text(), Loader=yaml.SafeLoader)
+            return SecretText(value[key_type])
         case _:
             raise Exception("Exactly one of secret_path or secret must be provided")
 
@@ -381,8 +381,10 @@ class MatrixChatterManager:
         # this is a cache, but is updated with transactions, so mostly correct
         self.room_members: dict[tuple[RoomId, UserId], RoomMember] = {}  # unbounded
         self.app_user = UserId(config.app_user, config.domain)
-        self.client = MatrixClient(config.homeserver, get_secret(config.app_as_token, config.app_as_token_path))
-        self.app_hs_token = get_secret(config.app_hs_token, config.app_hs_token_path)
+        self.client = MatrixClient(
+            config.homeserver, get_secret("as_token", config.app_as_token, config.app_as_token_path)
+        )
+        self.app_hs_token = get_secret("hs_token", config.app_hs_token, config.app_hs_token_path)
         self._event_handlers: dict[str, EventHandler] = {
             "m.room.member": self.handle_room_member,
             "m.room.message": self.handle_room_message,

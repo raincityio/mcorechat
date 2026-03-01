@@ -2,6 +2,7 @@
 import dataclasses
 import enum
 import json
+from pathlib import Path
 from typing import Any
 
 from meshcore.events import Event, EventType
@@ -135,3 +136,11 @@ def backoff_iter():
         yield schedule[i]
     while True:
         yield schedule[-1]
+
+
+def config_path_helper(root: Path, raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        return path
+    else:
+        return root.joinpath(path)

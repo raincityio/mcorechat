@@ -2,12 +2,15 @@
 
 import dataclasses
 import enum
+import functools
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
 import platformdirs
 
+from .common import config_path_helper
 from .matrix.config import Config as MatrixConfig
 
 default_config_path = platformdirs.user_config_path("mesh2chat").joinpath("config.yml")
@@ -30,14 +33,16 @@ class MeshCoreConfig:
     tcp_endpoint: tuple[str, int] = default_tcp_endpoint
 
     @staticmethod
-    def from_data(data: dict[str, Any]):
+    def from_data(root: Path, data: dict[str, Any]):
+        field_types: dict[str, Callable[[Any], Any]] = {
+            "serial_device_path": functools.partial(config_path_helper, root),
+            "mc_endpoint": tuple,
+            "driver": MeshCoreDriver,
+        }
         kwargs = data.copy()
-        if "serial_device_path" in data:
-            kwargs["serial_device_path"] = Path(data["serial_device_path"]).expanduser()
-        if "mc_endpoint" in data:
-            kwargs["mc_endpoint"] = tuple(data["mc_endpoint"])
-        if "driver" in data:
-            kwargs["driver"] = MeshCoreDriver(data["driver"])
+        for key, cls in field_types.items():
+            if key in data:
+                kwargs[key] = cls(data[key])
         return MeshCoreConfig(**kwargs)
 
 
@@ -52,14 +57,15 @@ class Config:
     maxish_message_length: int = 156
 
     @staticmethod
-    def from_data(data: dict[str, Any]) -> "Config":
+    def from_data(root: Path, data: dict[str, Any]) -> "Config":
+        field_types: dict[str, Callable[[Any], Any]] = {
+            "matrix": functools.partial(MatrixConfig.from_data, root),
+            "loglevel": logging.getLevelName,
+            "logging_config_path": functools.partial(config_path_helper, root),
+            "meshcore": functools.partial(MeshCoreConfig.from_data, root),
+        }
         kwargs = data.copy()
-        if "matrix" in data:
-            kwargs["matrix"] = MatrixConfig.from_data(data["matrix"])
-        if "loglevel" in data:
-            kwargs["loglevel"] = logging.getLevelName(data["loglevel"])  # pyright: ignore [reportDeprecated]
-        if "logging_config_path" in data:
-            kwargs["logging_config_path"] = Path(data["logging_config_path"]).expanduser()
-        if "meshcore" in data:
-            kwargs["meshcore"] = MeshCoreConfig.from_data(data["meshcore"])
+        for key, cls in field_types.items():
+            if key in data:
+                kwargs[key] = cls(data[key])
         return Config(**kwargs)

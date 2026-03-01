@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import dataclasses
+import functools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcorechat.common import ContactName
+from mcorechat.common import ContactName, config_path_helper
 from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserId, UserName, AppNamespace, parse_user_id
 
 default_listen = ("127.0.0.1", 9000)
@@ -18,10 +19,10 @@ class SSLConfig:
     enabled: bool = True
 
     @staticmethod
-    def from_data(data: dict[str, Any]) -> "SSLConfig":
+    def from_data(root: Path, data: dict[str, Any]) -> "SSLConfig":
         field_types: dict[str, Callable[[Any], Any]] = {
-            "certfile": Path,
-            "keyfile": Path,
+            "certfile": functools.partial(config_path_helper, root),
+            "keyfile": functools.partial(config_path_helper, root),
         }
         kwargs = data.copy()
         for key, cls in field_types.items():
@@ -47,18 +48,18 @@ class Config:
     contact_name_mappings: dict[ContactName, UserId] = dataclasses.field(default_factory=dict[ContactName, UserId])
 
     @staticmethod
-    def from_data(data: dict[str, Any]) -> "Config":
+    def from_data(root: Path, data: dict[str, Any]) -> "Config":
         field_types: dict[str, Callable[[Any], Any]] = {
             "domain": DomainName,
             "homeserver": HomeserverURL,
             "app_user": UserName,
             "app_as_token": SecretText,
-            "app_as_token_path": Path,
+            "app_as_token_path": functools.partial(config_path_helper, root),
             "app_hs_token": SecretText,
-            "app_hs_token_path": Path,
+            "app_hs_token_path": functools.partial(config_path_helper, root),
             "app_namespace": AppNamespace,
             "listen": tuple,
-            "ssl": SSLConfig.from_data,
+            "ssl": functools.partial(SSLConfig.from_data, root),
             "contact_name_mappings": lambda x: {ContactName(k): parse_user_id(v) for k, v in x.items()},
         }
         kwargs = data.copy()
