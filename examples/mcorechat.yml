@@ -15,7 +15,7 @@ matrix:
     vashbash: "@vashbash:example.com"
   dev_soft_fail: true
 
-logging_config_path: ~/PycharmProjects/mesh2irc/examples/mesh2chat_logging.yml
+logging_config_path: ~/PycharmProjects/mesh2irc/examples/mcorechat_logging.yml
 #seed_contacts: true
 #seed_contacts: false
 dev_enable_send: true
