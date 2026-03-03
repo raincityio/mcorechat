@@ -185,17 +185,19 @@ async def main_loop(
         else:
             await chatter.send_channel(display_name, channel.name, message)
 
-    async def handle_messages_waiting(event_q: asyncio.Queue[Event]):
-        while True:
-            result = await mcp.meshcore.commands.get_msg()
-            match result.type:
-                case EventType.NO_MORE_MSGS:
+    handle_messages_waiting_l = asyncio.Lock()
+
+    async def handle_messages_waiting(*_: Any):
+        async with handle_messages_waiting_l:
+            while True:
+                result = await mcp.meshcore.commands.get_msg()
+                if result.type == EventType.NO_MORE_MSGS:
                     break
-                case EventType.CHANNEL_MSG_RECV:
-                    event_q.put_nowait(result)
-                case EventType.CONTACT_MSG_RECV:
-                    event_q.put_nowait(result)
-                case _:
+                elif result.type == EventType.CHANNEL_MSG_RECV:
+                    await handle_channel_msg_recv(result)
+                elif result.type == EventType.CONTACT_MSG_RECV:
+                    await handle_contact_msg_recv(result)
+                else:
                     raise Exception(f"Unexpected event: {result}")
 
     async def handle_advertisement(_event: Event):
@@ -219,32 +221,26 @@ async def main_loop(
             if contact_filter(contact):
                 await chatter.add_contact(contact)
 
-    async def event_loop():
-        # max size one so we don't drop too much if we suddenly exit
-        event_q: asyncio.Queue[Event] = asyncio.Queue()
-        mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, event_q.put)
-        mcp.meshcore.subscribe(EventType.ADVERTISEMENT, event_q.put)
-        mcp.meshcore.subscribe(EventType.NEW_CONTACT, event_q.put)
+    async def handle_event(event: Event):
+        logger.debug(f"Processing event: {event}")
+        match event.type:
+            case EventType.MESSAGES_WAITING:
+                await handle_messages_waiting()
+            case EventType.ADVERTISEMENT:
+                await handle_advertisement(event)
+            case EventType.NEW_CONTACT:
+                await handle_new_contact(event)
+            case _:
+                logger.warning(f"Unexpected event: {event}")
 
-        await handle_messages_waiting(event_q)
-        while True:
-            event = await event_q.get()
-            logger.debug(f"Processing event: {event}")
-            match event.type:
-                case EventType.MESSAGES_WAITING:
-                    await handle_messages_waiting(event_q)
-                case EventType.ADVERTISEMENT:
-                    await handle_advertisement(event)
-                case EventType.NEW_CONTACT:
-                    await handle_new_contact(event)
-                case EventType.CONTACT_MSG_RECV:
-                    await handle_contact_msg_recv(event)
-                case EventType.CHANNEL_MSG_RECV:
-                    await handle_channel_msg_recv(event)
-                case _:
-                    logger.warning(f"Unexpected event: {event}")
+    mcp.meshcore.subscribe(EventType.MESSAGES_WAITING, handle_event)
+    mcp.meshcore.subscribe(EventType.ADVERTISEMENT, handle_event)
+    mcp.meshcore.subscribe(EventType.NEW_CONTACT, handle_event)
+    # on connected (reconnected) check for messages
+    mcp.meshcore.subscribe(EventType.CONNECTED, handle_messages_waiting)
 
-    await event_loop()
+    await handle_messages_waiting()
+    await asyncio.Event().wait()
 
 
 async def amain():
