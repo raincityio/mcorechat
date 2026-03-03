@@ -17,7 +17,7 @@ import yaml
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mcorechat.chatter import Chatter, ChatterManager
+from mcorechat.chatter import Chatter, ChatterManager, ChannelAlreadyAddedException
 from mcorechat.common import (
     Contact,
     Channel,
@@ -80,8 +80,9 @@ class MeshCorePlus:
         self.contact_cache: dict[PublicKey, Contact] | None = None
         self.channel_cache: dict[int, Channel] | None = None
 
-    async def _get_channels(self):
-        if self.channel_cache is None:
+    async def _get_channels(self, *, recache: bool | None = None) -> dict[int, Channel]:
+        recache = False if recache is None else recache
+        if recache or (self.channel_cache is None):
             channel_cache: dict[int, Channel] = {}
             for idx in range(MAX_CHANNELS):
                 mc_channel = await self.meshcore.commands.get_channel(idx)
@@ -95,7 +96,7 @@ class MeshCorePlus:
         return self.channel_cache
 
     async def iter_channels(self):
-        for channel in (await self._get_channels()).values():
+        for channel in (await self._get_channels(recache=True)).values():
             yield channel
 
     async def get_channel(self, *, idx: Optional[int] = None, name: Optional[ChannelName] = None):
@@ -313,8 +314,44 @@ async def amain():
                 raise RuntimeError(message)
             raise RuntimeError(f"Exited with status {status}")
 
-    def command_callback(_command_channel: ChannelName, _chatter: Chatter):
-        async def _callback(source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId):
+    def contact_filter(_contact: Contact):
+        return _contact.type == ContactType.CLIENT
+
+    class RadioChatter:
+
+        async def init(self):
+
+            contacts: list[Contact] = []
+            async for contact in mcp.iter_contacts():
+                if contact_filter(contact):
+                    contacts.append(contact)
+
+            channels: list[ChannelName] = []
+            async for channel in mcp.iter_channels():
+                if channel.name not in channels:
+                    channels.append(channel.name)
+
+            self.chatter = await chatter_manager.add_chatter(
+                self_contact,
+                contacts=contacts,
+                channels=channels,
+                channel_callback=self.channel_callback,
+                direct_callback=self.direct_callback,
+            )
+
+            @fault_wrapper
+            async def handle_advertisements(*_: Any):
+                raise InvalidRequestException(f"Advertisements does not support messaging")
+
+            self.advertisements_channel = ChannelName("[advertisements]")
+            await self.chatter.add_channel(self.advertisements_channel, callback=handle_advertisements)
+
+            command_channel = ChannelName("[command]")
+            await self.chatter.add_channel(command_channel, callback=self.command_callback)
+
+        async def command_callback(
+            self, source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
+        ):
             cmd = shlex.split(str(message))
 
             parser = ThrowingArgumentParser(exit_on_error=False)
@@ -324,6 +361,12 @@ async def amain():
             subparser.add_argument("--name", required=True)
             subparser = subparsers.add_parser("send-advert")
             subparser.add_argument("--flood", action="store_true")
+            subparser = subparsers.add_parser("set-channel")
+            subparser.add_argument("--channel-idx", type=int, required=True)
+            subparser.add_argument("--name", required=True)
+            subparser = subparsers.add_parser("clear-channel")
+            subparser.add_argument("--channel-idx", type=int, required=True)
+            subparser = subparsers.add_parser("list-channels")
             try:
                 args = parser.parse_args(args=cmd)
             except ArgumentError as e:
@@ -339,80 +382,98 @@ async def amain():
             elif args.command == "send-advert":
                 advert = await meshcore.commands.send_advert(flood=args.flood)
                 output = [json.dumps(advert, cls=JSONEncoder)]
+            elif args.command == "set-channel":
+                set_channel_result = await meshcore.commands.set_channel(args.channel_idx, args.channel_name)
+                try:
+                    channel_name = ChannelName(args.channel_name)
+                    await self.chatter.add_channel(channel_name)
+                except ChannelAlreadyAddedException as e:
+                    raise InvalidRequestException(f"Channel already added: {channel_name}") from e
+                output = [json.dumps(set_channel_result, cls=JSONEncoder)]
+            elif args.command == "list-channels":
+                channels: list[ChannelName] = []
+                async for channel in mcp.iter_channels():
+                    channels.append(channel.name)
+                output = [json.dumps(channels, cls=JSONEncoder)]
             else:
                 raise InvalidRequestException(f"Unknown command: {cmd}")
             for line in output:
-                await _chatter.send_channel(self_contact, _command_channel, Message(line))
+                await self.chatter.send_channel(self_contact, channel_name, Message(line))
 
-        return _callback
+        @fault_wrapper
+        async def channel_callback(
+            self, source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
+        ) -> None:
+            if source != self_display_name:
+                # FIXME illegal state
+                logger.debug(f"!send message {message} {message_id}")
+                return
+            if len(message) > config.maxish_message_length:
+                raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
+            channel = await mcp.get_channel(name=channel_name)
+            if channel is None:
+                raise InvalidRequestException(f"Unknown channel: {channel_name}")
+            if config.dev_enable_send:
+                logger.debug(f"send message {message} {message_id}")
+                await mcp.send_chan_msg(channel.idx, message)
+            else:
+                logger.debug(f"!send message {message} {message_id}")
 
-    @fault_wrapper
-    async def channel_callback(
-        source: DisplayName, channel_name: ChannelName, message: Message, message_id: MessageId
-    ) -> None:
-        if source != self_display_name:
-            # FIXME illegal state
-            logger.debug(f"!send message {message} {message_id}")
-            return
-        if len(message) > config.maxish_message_length:
-            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
-        channel = await mcp.get_channel(name=channel_name)
-        if channel is None:
-            raise InvalidRequestException(f"Unknown channel: {channel_name}")
-        if config.dev_enable_send:
-            logger.debug(f"send message {message} {message_id}")
-            await mcp.send_chan_msg(channel.idx, message)
-        else:
-            logger.debug(f"!send message {message} {message_id}")
-
-    @fault_wrapper
-    async def direct_callback(source: DisplayName, destination: PublicKey, message: Message, message_id: MessageId):
-        if source != self_display_name:
-            # FIXME illegal state
-            logger.warning(f"!send message {message} {message_id}")
-            return
-        if len(message) > config.maxish_message_length:
-            raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
-        if config.dev_enable_send:
-            logger.debug(f"send message {destination} {message}")
-            await mcp.send_msg(destination, message)
-        else:
-            logger.debug(f"!send message {destination} {message}")
+        @fault_wrapper
+        async def direct_callback(
+            self, source: DisplayName, destination: PublicKey, message: Message, message_id: MessageId
+        ):
+            if source != self_display_name:
+                # FIXME illegal state
+                logger.warning(f"!send message {message} {message_id}")
+                return
+            if len(message) > config.maxish_message_length:
+                raise InvalidRequestException(f"Message too long: len[{len(message)}] > {config.maxish_message_length}")
+            if config.dev_enable_send:
+                logger.debug(f"send message {destination} {message}")
+                await mcp.send_msg(destination, message)
+            else:
+                logger.debug(f"!send message {destination} {message}")
 
     # Set up and run
-    def contact_filter(_contact: Contact):
-        return _contact.type == ContactType.CLIENT
+    # def contact_filter(_contact: Contact):
+    #     return _contact.type == ContactType.CLIENT
+    #
+    # contacts: list[Contact] = []
+    # async for contact in mcp.iter_contacts():
+    #     if contact_filter(contact):
+    #         contacts.append(contact)
+    #
+    # channels: list[ChannelName] = []
+    # async for channel in mcp.iter_channels():
+    #     channels.append(channel.name)
+    #
+    # chatter = await chatter_manager.add_chatter(
+    #     self_contact,
+    #     contacts=contacts,
+    #     channels=channels,
+    #     channel_callback=channel_callback,
+    #     direct_callback=direct_callback,
+    # )
+    #
+    # @fault_wrapper
+    # async def handle_advertisements(*_: Any):
+    #     raise InvalidRequestException(f"Advertisements does not support messaging")
+    #
+    # advertisements_channel = ChannelName("[advertisements]")
+    # await chatter.add_channel(advertisements_channel, callback=handle_advertisements)
+    #
+    # command_channel = ChannelName("[command]")
+    # await chatter.add_channel(command_channel, callback=command_callback(command_channel, chatter))
 
-    contacts: list[Contact] = []
-    async for contact in mcp.iter_contacts():
-        if contact_filter(contact):
-            contacts.append(contact)
-
-    channels: list[ChannelName] = []
-    async for channel in mcp.iter_channels():
-        channels.append(channel.name)
-
-    chatter = await chatter_manager.add_chatter(
-        self_contact,
-        contacts=contacts,
-        channels=channels,
-        channel_callback=channel_callback,
-        direct_callback=direct_callback,
-    )
-
-    @fault_wrapper
-    async def handle_advertisements(*_: Any):
-        raise InvalidRequestException(f"Advertisements does not support messaging")
-
-    advertisements_channel = ChannelName("[advertisements]")
-    await chatter.add_channel(advertisements_channel, callback=handle_advertisements)
-
-    command_channel = ChannelName("[command]")
-    await chatter.add_channel(command_channel, callback=command_callback(command_channel, chatter))
+    radio_chatter = RadioChatter()
+    await radio_chatter.init()
 
     async with TaskGroup() as g:
         g.create_task(chatter_manager.run())
-        g.create_task(main_loop(config, mcp, chatter, contact_filter, advertisements_channel))
+        g.create_task(
+            main_loop(config, mcp, radio_chatter.chatter, contact_filter, radio_chatter.advertisements_channel)
+        )
         await fault
 
 

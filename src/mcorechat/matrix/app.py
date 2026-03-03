@@ -14,6 +14,8 @@ from mcorechat.chatter import (
     UnknownContactException,
     UnknownChannelException,
     DirectCallback,
+    ContactAlreadyAddedException,
+    ChannelAlreadyAddedException,
 )
 from mcorechat.common import ContactName, Message, ChannelName, Contact, HTMLMessage, MessageId, DisplayName
 from mcorechat.matrix.common import (
@@ -65,7 +67,8 @@ class ContactManager:
         self.contacts_by_user_id: dict[UserId, ContactInfo] = {}
 
     def add(self, contact_info: ContactInfo) -> None:
-        assert contact_info.user_id not in self.contacts_by_user_id
+        if contact_info.user_id in self.contacts_by_user_id:
+            raise ContactAlreadyAddedException()
         self.contacts_by_user_id[contact_info.user_id] = contact_info
 
     def get(self, user_id: UserId) -> ContactInfo:
@@ -89,18 +92,16 @@ class RoomInfo:
     admin_id: UserId
 
 
-class UnknownRoomException(Exception):
-    pass
-
-
 class RoomManager:
     def __init__(self) -> None:
         self.rooms_by_room_id: dict[RoomId, RoomInfo] = {}
         self.rooms_by_alias: dict[RoomAlias, RoomInfo] = {}
 
     def add(self, room_info: RoomInfo) -> None:
-        assert room_info.id not in self.rooms_by_room_id
-        assert room_info.alias not in self.rooms_by_alias
+        if room_info.id in self.rooms_by_room_id:
+            raise ChannelAlreadyAddedException(room_info.name)
+        if room_info.alias in self.rooms_by_alias:
+            raise ChannelAlreadyAddedException()
         self.rooms_by_room_id[room_info.id] = room_info
         self.rooms_by_alias[room_info.alias] = room_info
 
@@ -112,7 +113,7 @@ class RoomManager:
                 case RoomAlias() as alias:
                     return self.rooms_by_alias[alias]
         except KeyError as e:
-            raise UnknownRoomException() from e
+            raise UnknownChannelException() from e
 
     def __contains__(self, handle: RoomId | RoomAlias) -> bool:
         match handle:
@@ -294,10 +295,7 @@ class MatrixChatter:
 
     async def send_channel(self, source: DisplayName | Contact, channel_name: ChannelName, message: Message) -> None:
         room_alias = self.vanity.create_room_alias(self.identity, channel_name)
-        try:
-            room_info = self.room_manager.get(room_alias)
-        except UnknownRoomException as e:
-            raise UnknownChannelException() from e
+        room_info = self.room_manager.get(room_alias)
         source_profile = self.vanity.create_user_profile(self.identity, source)
         await self.ensure_room_member(room_info.id, source_profile)
         await self.client.send_message(room_info.id, message, as_user_id=source_profile.id)

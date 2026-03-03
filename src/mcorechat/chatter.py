@@ -10,7 +10,15 @@ type DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awa
 type ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
 
 
+class ChannelAlreadyAddedException(Exception):
+    pass
+
+
 class UnknownChannelException(Exception):
+    pass
+
+
+class ContactAlreadyAddedException(Exception):
     pass
 
 
