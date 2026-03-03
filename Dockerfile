@@ -4,7 +4,7 @@ FROM python:3.13-slim AS builder
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /mcorechat/working
+WORKDIR /tmp/mcorechat
 
 # System deps for building (safe even if pure Python)
 RUN apt-get update && apt-get install -y \
@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
 
 # Copy only what is needed to build
 COPY pyproject.toml .
-COPY README.md .
 COPY src ./src
 
 # Install build tooling
