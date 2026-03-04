@@ -189,7 +189,6 @@ class RadioChatter:
         self.config = config
         self.mcp = mcp
         self.identity = identity
-        self.display_name = DisplayName(mcp.meshcore.self_info["name"])
         self.chatter = chatter
         self.lock = asyncio.Lock()
         self.added_public_keys: list[PublicKey] = []
