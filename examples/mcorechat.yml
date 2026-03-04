@@ -1,16 +1,22 @@
-meshcore:
-  driver: tcp
-  tcp_endpoint: [ koopa.elisha.raincity.io, 5678 ]
+radios:
+  heltec:
+    meshcore:
+      driver: tcp
+      tcp_endpoint: [ koopa.elisha.raincity.io, 1234 ]
+  wio:
+    enabled: false
+    meshcore:
+      driver: tcp
+      tcp_endpoint: [ koopa.elisha.raincity.io, 5678 ]
 matrix:
   listen: [ 0.0.0.0, 9000 ]
-  homeserver: "http://polaris.elisha.raincity.io:8008"
+  homeserver: "http://localhost:8008"
   domain: example.com
-  app_user: examplebot
+  app_user_id: "@meshbot:example.com"
   app_as_token_path: ~/.local/mcorechat/keys.yml
   app_hs_token_path: ~/.local/mcorechat/keys.yml
-  app_namespace: mesh_
-  contact_name_mappings:
-    vashbash: "@vashbash:example.com"
+  app_namespace: mesh
+  identity_user_id: "@drew:example.com"
   dev_soft_fail: true
 
 logging_config_path: mcorechat_logging.yml

@@ -2,12 +2,16 @@
 from collections.abc import Callable, Awaitable
 from typing import Protocol
 
-from mcorechat.common import ChannelName, Message, MessageId, Contact, PublicKey, DisplayName
+from mcorechat.common import ChannelName, Message, MessageId, Contact, DisplayName, HTMLMessage
 
 # source, destination, message, message_id
-type DirectCallback = Callable[[DisplayName, PublicKey, Message, MessageId], Awaitable[None]]
+type DirectCallback = Callable[[Message, MessageId], Awaitable[None]]
 # source, destination, message, message_id
-type ChannelCallback = Callable[[DisplayName, ChannelName, Message, MessageId], Awaitable[None]]
+type ChannelCallback = Callable[[Message, MessageId], Awaitable[None]]
+
+
+class InvalidRequestException(Exception):
+    pass
 
 
 class ChannelAlreadyAddedException(Exception):
@@ -27,11 +31,14 @@ class UnknownContactException(Exception):
 
 
 class Chatter(Protocol):
-    async def add_contact(self, contact: Contact) -> None: ...
-    async def add_channel(self, channel_name: ChannelName, *, callback: ChannelCallback | None = None) -> None: ...
-    async def send_direct(self, source: Contact, message: Message) -> None: ...
+    async def prune_contacts(self, contacts: list[Contact]) -> None: ...
+    async def add_contact(self, contact: Contact, callback: DirectCallback) -> None: ...
+    async def remove_contact(self, contact: Contact) -> None: ...
+    async def add_channel(self, channel_name: ChannelName, callback: ChannelCallback) -> None: ...
+    async def remove_channel(self, channel_name: ChannelName) -> None: ...
+    async def send_direct(self, source: Contact, message: Message | HTMLMessage) -> None: ...
     async def send_channel(
-        self, source: Contact | DisplayName, channel_name: ChannelName, message: Message
+        self, source: Contact | DisplayName, channel_name: ChannelName, message: Message | HTMLMessage
     ) -> None: ...
 
 
@@ -40,9 +47,4 @@ class ChatterManager(Protocol):
     async def add_chatter(
         self,
         identity: Contact,
-        *,
-        channels: list[ChannelName] | None = None,
-        channel_callback: ChannelCallback,
-        contacts: list[Contact] | None = None,
-        direct_callback: DirectCallback,
     ) -> Chatter: ...

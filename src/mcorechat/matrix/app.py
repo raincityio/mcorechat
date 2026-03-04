@@ -1,7 +1,6 @@
 import dataclasses
 import logging
 import ssl
-from asyncio import TaskGroup
 from collections.abc import Callable, Awaitable
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from mcorechat.chatter import (
     DirectCallback,
     ContactAlreadyAddedException,
     ChannelAlreadyAddedException,
+    Chatter,
 )
 from mcorechat.common import ContactName, Message, ChannelName, Contact, HTMLMessage, MessageId, DisplayName
 from mcorechat.matrix.common import (
@@ -99,7 +99,7 @@ class RoomManager:
 
     def add(self, room_info: RoomInfo) -> None:
         if room_info.id in self.rooms_by_room_id:
-            raise ChannelAlreadyAddedException(room_info.name)
+            raise ChannelAlreadyAddedException()
         if room_info.alias in self.rooms_by_alias:
             raise ChannelAlreadyAddedException()
         self.rooms_by_room_id[room_info.id] = room_info
@@ -193,11 +193,11 @@ class Vanity:
         name = RoomName(str(identity.name))
         return RoomProfile(alias, name)
 
-    def map_contact_name(self, contact_name: ContactName):
-        if contact_name in self.config.contact_name_mappings:
-            return self.config.contact_name_mappings[contact_name]
-        else:
-            return UserId(UserName(str(contact_name)), self.config.domain)
+    # def map_contact_name(self, contact_name: ContactName):
+    #     if contact_name in self.config.contact_name_mappings:
+    #         return self.config.contact_name_mappings[contact_name]
+    #     else:
+    #         return UserId(UserName(str(contact_name)), self.config.domain)
 
 
 #### hmm
@@ -211,11 +211,8 @@ class MatrixChatter:
         vanity: Vanity,
         config: Config,
         room_manager: RoomManager,
-        channel_callback: ChannelCallback,
-        direct_callback: DirectCallback,
         client: MatrixClient,
         contact_manager: ContactManager,
-        app_user: UserId,
         mcm: "MatrixChatterManager",
     ):
         self.identity = identity
@@ -223,27 +220,26 @@ class MatrixChatter:
         self.vanity = vanity
         self.config = config
         self.room_manager = room_manager
-        self.channel_callback = channel_callback
-        self.direct_callback = direct_callback
         self.client = client
         self.contact_manager = contact_manager
-        self.app_user = app_user
         self.mcm = mcm
 
     # Interface
-    async def add_contact(self, contact: Contact) -> None:
-        async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId) -> None:
-            _room_member = await self.mcm.get_room_member(_room_id, _source_user_id, as_user_id=contact_profile.id)
-            if _room_member is None:
-                return
-            if _room_member.display_name is None:
-                _source = DisplayName(str(_source_user_id.name))
-            else:
-                _source = _room_member.display_name
-            if _source == identity_display_name:
-                await self.direct_callback(_source, contact.public_key, _message, _message_id)
+    async def prune_contacts(self, contacts: list[Contact]) -> None:
+        contact_set = {self.vanity.create_user_id(self.identity, e) for e in contacts}
+        for room_member in await self.mcm.get_room_members(self.space_id):
+            if not self.mcm.is_app_user_id(room_member.user_id):
+                continue
+            if room_member.user_id == self.config.app_user_id:
+                continue
+            if room_member.membership in (RoomMembership.JOIN, RoomMembership.INVITE):
+                if room_member.user_id not in contact_set:
+                    await self.client.leave_room(self.space_id, as_user_id=room_member.user_id)
 
-        identity_display_name = DisplayName(str(self.identity.name))
+    async def add_contact(self, contact: Contact, callback: DirectCallback) -> None:
+        async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId) -> None:
+            await callback(_message, _message_id)
+
         contact_profile = self.vanity.create_user_profile(self.identity, contact)
         room_member = await self.ensure_room_member(self.space_id, contact_profile)
         if room_member.display_name != contact_profile.display_name:
@@ -255,31 +251,26 @@ class MatrixChatter:
         contact_info = ContactInfo(contact, room_info.id, room_info.alias, contact_profile.id)
         self.contact_manager.add(contact_info)
 
-    async def add_channel(self, channel_name: ChannelName, *, callback: ChannelCallback | None = None) -> None:
-        callback = self.channel_callback if callback is None else callback
-
+    async def add_channel(self, channel_name: ChannelName, callback: ChannelCallback) -> None:
         async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId):
-            _room_member = await self.mcm.get_room_member(_room_id, _source_user_id)
-            if _room_member is None:
-                return
-            if _room_member.display_name is None:
-                _source = DisplayName(str(_source_user_id.name))
-            else:
-                _source = _room_member.display_name
-            if _source == identity_display_name:
-                await callback(_source, channel_name, _message, _message_id)
+            await callback(_message, _message_id)
 
-        identity_display_name = DisplayName(str(self.identity.name))
         room_profile = self.vanity.create_room_profile(self.identity, channel_name)
         room_id = await self.ensure_room(room_profile, is_direct=False)
-        room_info = RoomInfo(room_id, room_profile.alias, handler, self.app_user)
+        room_info = RoomInfo(room_id, room_profile.alias, handler, self.config.app_user_id)
         self.room_manager.add(room_info)
         await self.send_room_invite(room_info.id, self.identity.name)
 
-    async def send_direct(self, source: Contact, message: Message) -> None:
+    async def remove_channel(self, channel_name: ChannelName) -> None:
+        assert False
+
+    async def remove_contact(self, contact: Contact) -> None:
+        assert False
+
+    async def send_direct(self, source: Contact, message: Message | HTMLMessage) -> None:
         source_user_id = self.vanity.create_user_id(self.identity, source)
         source_info = self.contact_manager.get(source_user_id)
-        destination_user_id = self.vanity.map_contact_name(self.identity.name)
+        destination_user_id = self.config.identity_user_id
         destination_room_member = await self.mcm.get_room_member(
             source_info.room_id, destination_user_id, as_user_id=source_info.user_id
         )
@@ -293,7 +284,9 @@ class MatrixChatter:
             await self.mcm.invite_user(source_info.room_id, destination_user_id, as_user_id=source_info.user_id)
         await self.client.send_message(source_info.room_id, message, as_user_id=source_info.user_id)
 
-    async def send_channel(self, source: DisplayName | Contact, channel_name: ChannelName, message: Message) -> None:
+    async def send_channel(
+        self, source: DisplayName | Contact, channel_name: ChannelName, message: Message | HTMLMessage
+    ) -> None:
         room_alias = self.vanity.create_room_alias(self.identity, channel_name)
         room_info = self.room_manager.get(room_alias)
         source_profile = self.vanity.create_user_profile(self.identity, source)
@@ -363,7 +356,7 @@ class MatrixChatter:
         return room_member
 
     async def send_room_invite(self, room_id: RoomId, contact_name: ContactName) -> None:
-        user_id = self.vanity.map_contact_name(contact_name)
+        user_id = self.config.identity_user_id
         room_member = await self.mcm.get_room_member(room_id, user_id)
         if room_member is None:
             await self.mcm.invite_user(room_id, user_id)
@@ -378,7 +371,6 @@ class MatrixChatterManager:
         self.room_manager = RoomManager()
         # this is a cache, but is updated with transactions, so mostly correct
         self.room_members: dict[tuple[RoomId, UserId], RoomMember] = {}  # unbounded
-        self.app_user = UserId(config.app_user, config.domain)
         self.client = MatrixClient(
             config.homeserver, get_secret("as_token", config.app_as_token, config.app_as_token_path)
         )
@@ -508,9 +500,12 @@ class MatrixChatterManager:
 
     async def handle_room_message(self, event: MatrixEvent) -> None:
         source_user_id = parse_user_id(event["sender"])
-        if self.is_app_user_id(source_user_id) or (source_user_id == self.app_user):
-            logger.debug(f"Local user {source_user_id}")
+        if source_user_id != self.config.identity_user_id:
+            logging.debug(f"{source_user_id} != {self.config.identity_user_id}")
             return
+        # if self.is_app_user_id(source_user_id) or (source_user_id == self.config.app_user_id):
+        #     logger.debug(f"Local user {source_user_id}")
+        #     return
         room_id = RoomId(event["room_id"])
         if room_id not in self.room_manager:
             logger.debug(f"Room {room_id} not found")
@@ -572,54 +567,20 @@ class MatrixChatterManager:
     async def add_chatter(
         self,
         identity: Contact,
-        *,
-        channels: list[ChannelName] | None = None,
-        channel_callback: ChannelCallback,
-        contacts: list[Contact] | None = None,
-        direct_callback: DirectCallback,
-    ) -> MatrixChatter:
-        channels = [] if channels is None else channels
-        contacts = [] if contacts is None else contacts
+    ) -> Chatter:
 
         # set up space
         space_profile = self.vanity.create_space_profile(identity)
         space_id = await self.ensure_space(space_profile)
-        await self.invite_user(space_id, self.app_user)
+        await self.invite_user(space_id, self.config.identity_user_id)
 
-        chatter = MatrixChatter(
+        return MatrixChatter(
             identity,
             space_id,
             vanity=self.vanity,
             config=self.config,
             room_manager=self.room_manager,
-            channel_callback=channel_callback,
-            direct_callback=direct_callback,
             client=self.client,
             contact_manager=self.contact_manager,
-            app_user=self.app_user,
             mcm=self,
         )
-
-        # remove old contacts from the space and add all new ones
-        contact_set = {self.vanity.create_user_id(identity, e) for e in contacts}
-        for room_member in await self.get_room_members(space_id):
-            if not self.is_app_user_id(room_member.user_id):
-                continue
-            if room_member.user_id == self.app_user:
-                continue
-            if room_member.membership in (RoomMembership.JOIN, RoomMembership.INVITE):
-                if room_member.user_id not in contact_set:
-                    await self.client.leave_room(space_id, as_user_id=room_member.user_id)
-
-        async with TaskGroup() as g:
-
-            async def add_contact(_contact: Contact):
-                await chatter.add_contact(_contact)
-
-            for contact in contacts:
-                g.create_task(add_contact(contact))
-
-        for channel in channels:
-            await chatter.add_channel(channel)
-
-        return chatter

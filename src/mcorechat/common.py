@@ -118,6 +118,8 @@ class JSONEncoder(json.JSONEncoder):
             return {"name": o.name, "idx": o.idx}
         elif type(o) is ChannelName:
             return str(o)
+        elif type(o) is Channel:
+            return {"name": o.name, "idx": o.idx}
         elif type(o) in (
             ChannelName,
             Message,
