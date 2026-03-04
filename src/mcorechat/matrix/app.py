@@ -90,6 +90,7 @@ class RoomInfo:
     alias: RoomAlias
     handler: RoomHandler
     admin_id: UserId
+    identity_user_id: UserId
 
 
 class RoomManager:
@@ -206,6 +207,7 @@ class MatrixChatter:
     def __init__(
         self,
         identity: Contact,
+        identity_user_id: UserId,
         space_id: RoomId,
         *,
         vanity: Vanity,
@@ -216,6 +218,7 @@ class MatrixChatter:
         mcm: "MatrixChatterManager",
     ):
         self.identity = identity
+        self.identity_user_id = identity_user_id
         self.space_id = space_id
         self.vanity = vanity
         self.config = config
@@ -246,7 +249,7 @@ class MatrixChatter:
             await self.client.set_display_name(contact_profile.id, contact_profile.display_name)
         room_profile = self.vanity.create_room_profile(self.identity, contact)
         room_id = await self.ensure_room(room_profile, is_direct=True, as_user_id=contact_profile.id)
-        room_info = RoomInfo(room_id, room_profile.alias, handler, contact_profile.id)
+        room_info = RoomInfo(room_id, room_profile.alias, handler, contact_profile.id, self.identity_user_id)
         self.room_manager.add(room_info)
         contact_info = ContactInfo(contact, room_info.id, room_info.alias, contact_profile.id)
         self.contact_manager.add(contact_info)
@@ -257,7 +260,7 @@ class MatrixChatter:
 
         room_profile = self.vanity.create_room_profile(self.identity, channel_name)
         room_id = await self.ensure_room(room_profile, is_direct=False)
-        room_info = RoomInfo(room_id, room_profile.alias, handler, self.config.app_user_id)
+        room_info = RoomInfo(room_id, room_profile.alias, handler, self.config.app_user_id, self.identity_user_id)
         self.room_manager.add(room_info)
         await self.send_room_invite(room_info.id, self.identity.name)
 
@@ -270,7 +273,7 @@ class MatrixChatter:
     async def send_direct(self, source: Contact, message: Message | HTMLMessage) -> None:
         source_user_id = self.vanity.create_user_id(self.identity, source)
         source_info = self.contact_manager.get(source_user_id)
-        destination_user_id = self.config.identity_user_id
+        destination_user_id = self.identity_user_id
         destination_room_member = await self.mcm.get_room_member(
             source_info.room_id, destination_user_id, as_user_id=source_info.user_id
         )
@@ -356,7 +359,7 @@ class MatrixChatter:
         return room_member
 
     async def send_room_invite(self, room_id: RoomId, contact_name: ContactName) -> None:
-        user_id = self.config.identity_user_id
+        user_id = self.identity_user_id
         room_member = await self.mcm.get_room_member(room_id, user_id)
         if room_member is None:
             await self.mcm.invite_user(room_id, user_id)
@@ -499,18 +502,18 @@ class MatrixChatterManager:
             await self.client.send_message(room_id, HTMLMessage(f"<i><b>{msg}:</b> {cause}</i>"), as_user_id=as_user_id)
 
     async def handle_room_message(self, event: MatrixEvent) -> None:
-        source_user_id = parse_user_id(event["sender"])
-        if source_user_id != self.config.identity_user_id:
-            logging.debug(f"{source_user_id} != {self.config.identity_user_id}")
-            return
-        # if self.is_app_user_id(source_user_id) or (source_user_id == self.config.app_user_id):
-        #     logger.debug(f"Local user {source_user_id}")
-        #     return
         room_id = RoomId(event["room_id"])
         if room_id not in self.room_manager:
             logger.debug(f"Room {room_id} not found")
             return
         room_info = self.room_manager.get(room_id)
+        source_user_id = parse_user_id(event["sender"])
+        if source_user_id != room_info.identity_user_id:
+            logging.debug(f"{source_user_id} != {room_info.identity_user_id}")
+            return
+        # if self.is_app_user_id(source_user_id) or (source_user_id == self.config.app_user_id):
+        #     logger.debug(f"Local user {source_user_id}")
+        #     return
 
         message = Message(event["content"]["body"])
         message_id = MessageId(event["event_id"])
@@ -569,13 +572,17 @@ class MatrixChatterManager:
         identity: Contact,
     ) -> Chatter:
 
+        # TODO eventually support more interesting mappings?
+        identity_user_id = self.config.identity_user_id
+
         # set up space
         space_profile = self.vanity.create_space_profile(identity)
         space_id = await self.ensure_space(space_profile)
-        await self.invite_user(space_id, self.config.identity_user_id)
+        await self.invite_user(space_id, identity_user_id)
 
         return MatrixChatter(
             identity,
+            identity_user_id,
             space_id,
             vanity=self.vanity,
             config=self.config,
