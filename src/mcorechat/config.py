@@ -70,6 +70,7 @@ class Config:
     loglevel: Optional[int] = None
     logging_config_path: Path = default_logging_config_path
     dev_enable_send: bool = True
+    dev_enable_receive: bool = True
     advertise_known: bool = False
     maxish_message_length: int = 156
     advertisements_channel: ChannelName = ChannelName("[advertisements]")

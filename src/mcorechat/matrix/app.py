@@ -9,15 +9,14 @@ from aiohttp import web
 from aiohttp.web_request import Request
 
 from mcorechat.chatter import (
-    ChannelCallback,
+    MessageHandler,
     UnknownContactException,
     UnknownChannelException,
-    DirectCallback,
     ContactAlreadyAddedException,
     ChannelAlreadyAddedException,
     Chatter,
 )
-from mcorechat.common import ContactName, Message, ChannelName, Contact, HTMLMessage, MessageId, ChannelDisplayName
+from mcorechat.common import Message, ChannelName, Contact, HTMLMessage, MessageId, ChannelDisplayName
 from mcorechat.matrix.common import (
     MatrixAPIError,
     MatrixEvent,
@@ -56,11 +55,30 @@ def get_secret(key_type: str, secret: SecretText | None, secret_path: Path | Non
 
 
 @dataclasses.dataclass(frozen=True)
-class ContactInfo:
-    contact: Contact
-    room_id: RoomId
+class UserProfile:
+    id: UserId
+    display_name: DisplayName
+
+
+@dataclasses.dataclass(frozen=True)
+class RoomProfile:
     alias: RoomAlias
+    name: RoomName
+
+
+@dataclasses.dataclass(frozen=True)
+class RoomInfo:
+    id: RoomId
+    alias: RoomAlias
+    handler: MessageHandler
+    admin_id: UserId
+    identity_user_id: UserId
+
+
+@dataclasses.dataclass(frozen=True)
+class ContactInfo:
     user_id: UserId
+    room_id: RoomId
 
 
 class ContactManager:
@@ -80,18 +98,6 @@ class ContactManager:
 
     def __contains__(self, user_id: UserId) -> bool:
         return user_id in self.contacts_by_user_id
-
-
-type RoomHandler = Callable[[RoomId, UserId, Message, MessageId], Awaitable[None]]
-
-
-@dataclasses.dataclass(frozen=True)
-class RoomInfo:
-    id: RoomId
-    alias: RoomAlias
-    handler: RoomHandler
-    admin_id: UserId
-    identity_user_id: UserId
 
 
 class RoomManager:
@@ -125,68 +131,56 @@ class RoomManager:
                 return alias in self.rooms_by_alias
 
 
-@dataclasses.dataclass(frozen=True)
-class UserProfile:
-    id: UserId
-    display_name: DisplayName
-
-
-@dataclasses.dataclass(frozen=True)
-class RoomProfile:
-    alias: RoomAlias
-    name: RoomName
-
-
 class Vanity:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, identity: Contact, identity_user_id: UserId) -> None:
         self.config = config
+        self.identity = identity
+        self.identity_user_id = identity_user_id
 
     def create_user_id(
         self,
-        identity: Contact,
         handle: ChannelDisplayName | Contact,
     ) -> UserId:
         match handle:
-            case ChannelDisplayName() as channel_display_name:
-                user_name = UserName(f"{self.config.app_namespace}.channel.{sha256(str(channel_display_name))}")
+            case ChannelDisplayName():
+                suffix = f"channel.{sha256(str(handle))}"
             case Contact() as contact:
-                user_name = UserName(f"{self.config.app_namespace}.contact.{identity.public_key}.{contact.public_key}")
-        return UserId(user_name, self.config.domain)
+                suffix = f"contact.{sha256(str(self.identity.public_key), str(contact.public_key))}"
+        name = UserName(f"{self.config.app_namespace}.{suffix}")
+        return UserId(name, self.config.domain)
 
-    def create_display_name(self, contact: Contact):
-        return DisplayName(f"{str(contact.name)}{self.config.contact_suffix}")
-
-    def create_user_profile(self, identity: Contact, handle: ChannelDisplayName | Contact):
-        user_id = self.create_user_id(identity, handle)
+    def create_display_name(self, handle: ChannelDisplayName | Contact):
         match handle:
-            case ChannelDisplayName() as channel_display_name:
-                display_name = DisplayName(str(channel_display_name))
+            case ChannelDisplayName():
+                display_name = DisplayName(str(handle))
             case Contact() as contact:
-                display_name = self.create_display_name(contact)
+                display_name = DisplayName(f"{str(contact.name)}{self.config.contact_suffix}")
+        return display_name
+
+    def create_user_profile(self, handle: ChannelDisplayName | Contact):
+        user_id = self.create_user_id(handle)
+        display_name = self.create_display_name(handle)
         return UserProfile(user_id, display_name)
 
-    def create_room_alias(self, identity: Contact, handle: Contact | ChannelName):
+    def create_room_alias(self, handle: Contact | ChannelName):
         match handle:
             case ChannelName() as channel_name:
-                return RoomAlias(
-                    AliasName(f"{self.config.app_namespace}.channel.{identity.public_key}.{sha256(str(channel_name))}"),
-                    self.config.domain,
-                )
+                suffix = f"channel.{sha256(str(self.identity.public_key), str(channel_name))}"
             case Contact() as contact:
-                return RoomAlias(
-                    AliasName(f"{self.config.app_namespace}.direct.{identity.public_key}.{contact.public_key}"),
-                    self.config.domain,
-                )
+                suffix = f"direct1.{sha256(str(self.identity.public_key), str(self.identity_user_id), str(contact.public_key))}"
+        name = AliasName(f"{self.config.app_namespace}.{suffix}")
+        return RoomAlias(name, self.config.domain)
 
-    def create_room_profile(self, identity: Contact, handle: Contact | ChannelName):
+    def create_room_profile(self, handle: Contact | ChannelName):
         match handle:
             case ChannelName() as channel_name:
                 name = RoomName(str(channel_name))
             case Contact() as contact:
                 name = RoomName(str(self.create_display_name(contact)))
-        alias = self.create_room_alias(identity, handle)
+        alias = self.create_room_alias(handle)
         return RoomProfile(alias, name)
 
+    # TODO this is an awkward method now
     def create_space_profile(self, identity: Contact):
         alias = RoomAlias(
             AliasName(f"{self.config.app_namespace}.space.{identity.public_key}"),
@@ -194,12 +188,6 @@ class Vanity:
         )
         name = RoomName(str(identity.name))
         return RoomProfile(alias, name)
-
-    # def map_contact_name(self, contact_name: ContactName):
-    #     if contact_name in self.config.contact_name_mappings:
-    #         return self.config.contact_name_mappings[contact_name]
-    #     else:
-    #         return UserId(UserName(str(contact_name)), self.config.domain)
 
 
 #### hmm
@@ -230,7 +218,7 @@ class MatrixChatter:
 
     # Interface
     async def prune_contacts(self, contacts: list[Contact]) -> None:
-        contact_set = {self.vanity.create_user_id(self.identity, e) for e in contacts}
+        contact_set = {self.vanity.create_user_id(e) for e in contacts}
         for room_member in await self.mcm.get_room_members(self.space_id):
             if not self.mcm.is_app_user_id(room_member.user_id):
                 continue
@@ -240,30 +228,24 @@ class MatrixChatter:
                 if room_member.user_id not in contact_set:
                     await self.client.leave_room(self.space_id, as_user_id=room_member.user_id)
 
-    async def add_contact(self, contact: Contact, callback: DirectCallback) -> None:
-        async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId) -> None:
-            await callback(_message, _message_id)
-
-        contact_profile = self.vanity.create_user_profile(self.identity, contact)
+    async def add_contact(self, contact: Contact, handler: MessageHandler) -> None:
+        contact_profile = self.vanity.create_user_profile(contact)
         room_member = await self.ensure_room_member(self.space_id, contact_profile)
         if room_member.display_name != contact_profile.display_name:
             await self.client.set_display_name(contact_profile.id, contact_profile.display_name)
-        room_profile = self.vanity.create_room_profile(self.identity, contact)
+        room_profile = self.vanity.create_room_profile(contact)
         room_id = await self.ensure_room(room_profile, is_direct=True, as_user_id=contact_profile.id)
         room_info = RoomInfo(room_id, room_profile.alias, handler, contact_profile.id, self.identity_user_id)
         self.room_manager.add(room_info)
-        contact_info = ContactInfo(contact, room_info.id, room_info.alias, contact_profile.id)
+        contact_info = ContactInfo(contact_profile.id, room_id)
         self.contact_manager.add(contact_info)
 
-    async def add_channel(self, channel_name: ChannelName, callback: ChannelCallback) -> None:
-        async def handler(_room_id: RoomId, _source_user_id: UserId, _message: Message, _message_id: MessageId):
-            await callback(_message, _message_id)
-
-        room_profile = self.vanity.create_room_profile(self.identity, channel_name)
+    async def add_channel(self, channel_name: ChannelName, handler: MessageHandler) -> None:
+        room_profile = self.vanity.create_room_profile(channel_name)
         room_id = await self.ensure_room(room_profile, is_direct=False)
         room_info = RoomInfo(room_id, room_profile.alias, handler, self.config.app_user_id, self.identity_user_id)
         self.room_manager.add(room_info)
-        await self.send_room_invite(room_info.id, self.identity.name)
+        await self.send_room_invite(room_info.id, self.identity_user_id)
 
     async def remove_channel(self, channel_name: ChannelName) -> None:
         assert False
@@ -271,12 +253,11 @@ class MatrixChatter:
     async def remove_contact(self, contact: Contact) -> None:
         assert False
 
-    async def send_direct(self, source: Contact, message: Message | HTMLMessage) -> None:
-        source_user_id = self.vanity.create_user_id(self.identity, source)
-        source_info = self.contact_manager.get(source_user_id)
-        destination_user_id = self.identity_user_id
+    async def send_direct(self, peer: Contact, message: Message | HTMLMessage) -> None:
+        peer_user_id = self.vanity.create_user_id(peer)
+        peer_info = self.contact_manager.get(peer_user_id)
         destination_room_member = await self.mcm.get_room_member(
-            source_info.room_id, destination_user_id, as_user_id=source_info.user_id
+            peer_info.room_id, self.identity_user_id, as_user_id=peer_info.user_id
         )
         if destination_room_member is None:
             invite = True
@@ -285,17 +266,17 @@ class MatrixChatter:
         else:
             invite = False
         if invite:
-            await self.mcm.invite_user(source_info.room_id, destination_user_id, as_user_id=source_info.user_id)
-        await self.client.send_message(source_info.room_id, message, as_user_id=source_info.user_id)
+            await self.mcm.invite_user(peer_info.room_id, self.identity_user_id, as_user_id=peer_info.user_id)
+        await self.client.send_message(peer_info.room_id, message, as_user_id=peer_info.user_id)
 
     async def send_channel(
-        self, source: ChannelDisplayName | Contact, channel_name: ChannelName, message: Message | HTMLMessage
+        self, peer: ChannelDisplayName | Contact, channel_name: ChannelName, message: Message | HTMLMessage
     ) -> None:
-        room_alias = self.vanity.create_room_alias(self.identity, channel_name)
+        room_alias = self.vanity.create_room_alias(channel_name)
         room_info = self.room_manager.get(room_alias)
-        source_profile = self.vanity.create_user_profile(self.identity, source)
-        await self.ensure_room_member(room_info.id, source_profile)
-        await self.client.send_message(room_info.id, message, as_user_id=source_profile.id)
+        peer_profile = self.vanity.create_user_profile(peer)
+        await self.ensure_room_member(room_info.id, peer_profile)
+        await self.client.send_message(room_info.id, message, as_user_id=peer_profile.id)
 
     # Support
     async def ensure_room(
@@ -304,6 +285,7 @@ class MatrixChatter:
         *,
         is_direct: bool,
         as_user_id: UserId | None = None,
+        invite: list[UserId] | None = None,
     ) -> RoomId:
         room_id = await self.client.get_room_id_by_alias(profile.alias)
         if room_id is None:
@@ -320,6 +302,7 @@ class MatrixChatter:
                 preset=preset,
                 is_direct=is_direct,
                 as_user_id=as_user_id,
+                invite=invite,
             )
             await self.client.state_attach_child(self.space_id, room_id, self.config.domain)
         else:
@@ -359,8 +342,7 @@ class MatrixChatter:
                 raise Exception(f"Unexpected membership: {room_member.membership}")
         return room_member
 
-    async def send_room_invite(self, room_id: RoomId, contact_name: ContactName) -> None:
-        user_id = self.identity_user_id
+    async def send_room_invite(self, room_id: RoomId, user_id: UserId) -> None:
         room_member = await self.mcm.get_room_member(room_id, user_id)
         if room_member is None:
             await self.mcm.invite_user(room_id, user_id)
@@ -370,7 +352,6 @@ class MatrixChatterManager:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.vanity = Vanity(config)
         self.contact_manager = ContactManager()
         self.room_manager = RoomManager()
         # this is a cache, but is updated with transactions, so mostly correct
@@ -383,6 +364,7 @@ class MatrixChatterManager:
             "m.room.member": self.handle_room_member,
             "m.room.message": self.handle_room_message,
         }
+        self.chatters: dict[Contact, MatrixChatter] = {}
 
     async def run(self):
         app = web.Application()
@@ -480,11 +462,11 @@ class MatrixChatterManager:
                 else:
                     # ok, not a channel, join if it's direct and the contact is direct, and add app user too for management
                     if member.is_direct and (member.user_id in self.contact_manager):  # self.is_direct_member(member):
-                        await self.client.join_room(room_id, as_user_id=member.user_id)
-                        contact_info = self.contact_manager.get(member.user_id)
                         sender_user_id = parse_user_id(event["sender"])
-                        await self.invite_user(contact_info.room_id, sender_user_id, as_user_id=member.user_id)
-                        await self.client.tombstone_room(room_id, contact_info.room_id, as_user_id=member.user_id)
+                        peer_info = self.contact_manager.get(member.user_id)
+                        await self.client.join_room(room_id, as_user_id=member.user_id)
+                        await self.client.tombstone_room(room_id, peer_info.room_id, as_user_id=member.user_id)
+                        await self.invite_user(peer_info.room_id, sender_user_id, as_user_id=member.user_id)
 
     def is_channel_room_alias(self, alias: RoomAlias | None) -> bool:
         if alias is None:
@@ -520,7 +502,7 @@ class MatrixChatterManager:
         message_id = MessageId(event["event_id"])
 
         try:
-            await room_info.handler(room_id, source_user_id, message, message_id)
+            await room_info.handler(message, message_id)
         except Exception as e:
             await self.send_error(room_id, "Failed to send message", cause=str(e), as_user_id=room_info.admin_id)
 
@@ -575,20 +557,25 @@ class MatrixChatterManager:
 
         # TODO eventually support more interesting mappings?
         identity_user_id = self.config.identity_user_id
+        vanity = Vanity(self.config, identity, identity_user_id)
 
         # set up space
-        space_profile = self.vanity.create_space_profile(identity)
+        space_profile = vanity.create_space_profile(identity)
         space_id = await self.ensure_space(space_profile)
         await self.invite_user(space_id, identity_user_id)
 
-        return MatrixChatter(
+        chatter = MatrixChatter(
             identity,
             identity_user_id,
             space_id,
-            vanity=self.vanity,
+            vanity=vanity,
             config=self.config,
             room_manager=self.room_manager,
             client=self.client,
             contact_manager=self.contact_manager,
             mcm=self,
         )
+        if identity in self.chatters:
+            raise Exception(f"Chatter for {identity} already exists")
+        self.chatters[identity] = chatter
+        return chatter

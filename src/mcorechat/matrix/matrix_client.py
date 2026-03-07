@@ -134,6 +134,7 @@ class MatrixClient:
         is_direct: bool | None = None,
         is_space: bool | None = None,
         as_user_id: UserId | None = None,
+        invite: list[UserId] | None = None,
     ) -> RoomId:
 
         payload: dict[str, Any] = {
@@ -146,6 +147,8 @@ class MatrixClient:
             payload["creation_content"] = {"type": "m.space"}
         if is_direct:
             payload["is_direct"] = True
+        if invite:
+            payload["invite"] = invite
         data = await self._post(["createRoom"], payload=payload, as_user_id=as_user_id)
         return RoomId(data["room_id"])
 
@@ -244,7 +247,12 @@ class MatrixClient:
         await self._put(["rooms", room_id, "state", "m.room.name"], payload={"name": ""}, as_user_id=as_user_id)
 
     async def get_room_name(self, room_id: RoomId, *, as_user_id: UserId | None = None):
-        data = await self._get(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
+        try:
+            data = await self._get(["rooms", room_id, "state", "m.room.name"], as_user_id=as_user_id)
+        except MatrixAPIError as e:
+            if e.status != 404:
+                raise
+            return None
         return RoomName(data["name"])
 
     async def get_room_state(self, room_id: RoomId, *, as_user_id: UserId | None = None):

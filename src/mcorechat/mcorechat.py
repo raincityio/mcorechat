@@ -16,7 +16,7 @@ import yaml
 from meshcore import MeshCore, EventType
 from meshcore.events import Event
 
-from mcorechat.chatter import ChatterManager, Chatter, DirectCallback
+from mcorechat.chatter import ChatterManager, Chatter, MessageHandler
 from mcorechat.common import (
     Contact,
     Channel,
@@ -214,8 +214,8 @@ class RadioChatter:
         async def handle_advertisements(*_: Any):
             raise InvalidRequestException(f"Advertisements does not support messaging")
 
-        await self.chatter.add_channel(self.config.advertisements_channel, callback=handle_advertisements)
-        await self.chatter.add_channel(self.config.command_channel, callback=self.command_callback)
+        await self.chatter.add_channel(self.config.advertisements_channel, handler=handle_advertisements)
+        await self.chatter.add_channel(self.config.command_channel, handler=self.command_callback)
 
     async def send_advertisement(self, source: Contact | ChannelDisplayName, public_key: PublicKey):
         await self.chatter.send_channel(source, self.config.advertisements_channel, Message(str(public_key)))
@@ -337,7 +337,7 @@ class RadioChatter:
 
         return callback
 
-    def direct_callback(self, contact: Contact) -> DirectCallback:
+    def direct_callback(self, contact: Contact) -> MessageHandler:
         async def callback(message: Message, message_id: MessageId):
             if len(message) > self.config.maxish_message_length:
                 raise InvalidRequestException(
@@ -377,6 +377,8 @@ class RadioChatter:
         handle_messages_waiting_l = asyncio.Lock()
 
         async def handle_messages_waiting(*_: Any):
+            if not self.config.dev_enable_receive:
+                return
             async with handle_messages_waiting_l:
                 while True:
                     result = await self.mcp.meshcore.commands.get_msg()

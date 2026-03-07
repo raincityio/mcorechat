@@ -89,9 +89,10 @@ class SecretText:
         return repr(str(self))
 
 
-def sha256(text: str) -> str:
-    utf8_bytes = text.encode("utf-8")
-    sha256_hash = hashlib.sha256(utf8_bytes)
+def sha256(*args: str) -> str:
+    sha256_hash = hashlib.sha256()
+    for part in args:
+        sha256_hash.update(part.encode("utf-8"))
     return sha256_hash.hexdigest()
 
 

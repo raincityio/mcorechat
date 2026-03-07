@@ -22,7 +22,7 @@ handlers:
 #    encoding: utf-8
 
 root:
-  level: INFO
+  level: DEBUG
   handlers: [ console ]
 
 loggers:

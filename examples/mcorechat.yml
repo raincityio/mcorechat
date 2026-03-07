@@ -21,4 +21,5 @@ matrix:
 
 logging_config_path: mcorechat_logging.yml
 dev_enable_send: true
+dev_enable_receive: false
 advertise_known: true
