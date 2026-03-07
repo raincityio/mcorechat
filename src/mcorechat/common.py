@@ -41,7 +41,7 @@ class ChannelName:
 
 
 @dataclasses.dataclass(frozen=True)
-class DisplayName:
+class ChannelDisplayName:
     value: str
 
     def __str__(self):

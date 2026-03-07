@@ -6,7 +6,6 @@ import hashlib
 import json
 from typing import Any
 
-from mcorechat.common import DisplayName
 from mcorechat.common import JSONEncoder as CommonJSONEncoder
 
 type MatrixEvent = dict[str, Any]
@@ -33,6 +32,14 @@ class AppNamespace:
 
 @dataclasses.dataclass(frozen=True)
 class RoomName:
+    value: str
+
+    def __str__(self):
+        return self.value
+
+
+@dataclasses.dataclass(frozen=True)
+class DisplayName:
     value: str
 
     def __str__(self):

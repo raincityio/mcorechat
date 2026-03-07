@@ -17,7 +17,7 @@ from mcorechat.chatter import (
     ChannelAlreadyAddedException,
     Chatter,
 )
-from mcorechat.common import ContactName, Message, ChannelName, Contact, HTMLMessage, MessageId, DisplayName
+from mcorechat.common import ContactName, Message, ChannelName, Contact, HTMLMessage, MessageId, ChannelDisplayName
 from mcorechat.matrix.common import (
     MatrixAPIError,
     MatrixEvent,
@@ -34,6 +34,7 @@ from mcorechat.matrix.common import (
     sha256,
     RoomVisibility,
     AliasName,
+    DisplayName,
 )
 from mcorechat.matrix.config import Config
 from mcorechat.matrix.matrix_client import MatrixClient, parse_member_event
@@ -143,11 +144,11 @@ class Vanity:
     def create_user_id(
         self,
         identity: Contact,
-        handle: DisplayName | Contact,
+        handle: ChannelDisplayName | Contact,
     ) -> UserId:
         match handle:
-            case DisplayName() as display_name:
-                user_name = UserName(f"{self.config.app_namespace}.channel.{sha256(str(display_name))}")
+            case ChannelDisplayName() as channel_display_name:
+                user_name = UserName(f"{self.config.app_namespace}.channel.{sha256(str(channel_display_name))}")
             case Contact() as contact:
                 user_name = UserName(f"{self.config.app_namespace}.contact.{identity.public_key}.{contact.public_key}")
         return UserId(user_name, self.config.domain)
@@ -155,11 +156,11 @@ class Vanity:
     def create_display_name(self, contact: Contact):
         return DisplayName(f"{str(contact.name)}{self.config.contact_suffix}")
 
-    def create_user_profile(self, identity: Contact, handle: DisplayName | Contact):
+    def create_user_profile(self, identity: Contact, handle: ChannelDisplayName | Contact):
         user_id = self.create_user_id(identity, handle)
         match handle:
-            case DisplayName() as display_name:
-                pass
+            case ChannelDisplayName() as channel_display_name:
+                display_name = DisplayName(str(channel_display_name))
             case Contact() as contact:
                 display_name = self.create_display_name(contact)
         return UserProfile(user_id, display_name)
@@ -288,7 +289,7 @@ class MatrixChatter:
         await self.client.send_message(source_info.room_id, message, as_user_id=source_info.user_id)
 
     async def send_channel(
-        self, source: DisplayName | Contact, channel_name: ChannelName, message: Message | HTMLMessage
+        self, source: ChannelDisplayName | Contact, channel_name: ChannelName, message: Message | HTMLMessage
     ) -> None:
         room_alias = self.vanity.create_room_alias(self.identity, channel_name)
         room_info = self.room_manager.get(room_alias)

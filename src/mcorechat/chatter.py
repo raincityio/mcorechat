@@ -2,7 +2,7 @@
 from collections.abc import Callable, Awaitable
 from typing import Protocol
 
-from mcorechat.common import ChannelName, Message, MessageId, Contact, DisplayName, HTMLMessage
+from mcorechat.common import ChannelName, Message, MessageId, Contact, HTMLMessage, ChannelDisplayName
 
 # source, destination, message, message_id
 type DirectCallback = Callable[[Message, MessageId], Awaitable[None]]
@@ -38,7 +38,7 @@ class Chatter(Protocol):
     async def remove_channel(self, channel_name: ChannelName) -> None: ...
     async def send_direct(self, source: Contact, message: Message | HTMLMessage) -> None: ...
     async def send_channel(
-        self, source: Contact | DisplayName, channel_name: ChannelName, message: Message | HTMLMessage
+        self, source: Contact | ChannelDisplayName, channel_name: ChannelName, message: Message | HTMLMessage
     ) -> None: ...
 
 

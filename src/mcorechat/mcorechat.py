@@ -28,8 +28,8 @@ from mcorechat.common import (
     MessageId,
     ContactType,
     JSONEncoder,
-    DisplayName,
     HTMLMessage,
+    ChannelDisplayName,
 )
 from mcorechat.config import Config, default_config_path, MeshCoreConfig, MeshCoreDriver
 from mcorechat.matrix.app import MatrixChatterManager
@@ -217,7 +217,7 @@ class RadioChatter:
         await self.chatter.add_channel(self.config.advertisements_channel, callback=handle_advertisements)
         await self.chatter.add_channel(self.config.command_channel, callback=self.command_callback)
 
-    async def send_advertisement(self, source: Contact | DisplayName, public_key: PublicKey):
+    async def send_advertisement(self, source: Contact | ChannelDisplayName, public_key: PublicKey):
         await self.chatter.send_channel(source, self.config.advertisements_channel, Message(str(public_key)))
 
     async def add_contact(self, contact: Contact):
@@ -366,13 +366,13 @@ class RadioChatter:
 
         async def handle_channel_msg_recv(event: Event):
             user_name_raw, rest = str(event.payload["text"]).split(":", 1)
-            display_name = DisplayName(user_name_raw)
+            channel_display_name = ChannelDisplayName(user_name_raw)
             message = Message(rest.lstrip())
             channel = await self.mcp.get_channel(idx=event.payload["channel_idx"])
             if channel is None:
                 logger.warning(f"Unknown channel: {event}")
             else:
-                await self.chatter.send_channel(display_name, channel.name, message)
+                await self.chatter.send_channel(channel_display_name, channel.name, message)
 
         handle_messages_waiting_l = asyncio.Lock()
 
@@ -398,7 +398,7 @@ class RadioChatter:
                 advertise = self.config.advertise_known
             if advertise:
                 if contact is None:
-                    source = DisplayName("Unknown")
+                    source = ChannelDisplayName("Unknown")
                 else:
                     source = contact
                 await self.send_advertisement(source, public_key)
