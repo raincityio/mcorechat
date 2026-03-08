@@ -90,6 +90,9 @@ class ContactManager:
             raise ContactAlreadyAddedException()
         self.contacts_by_user_id[contact_info.user_id] = contact_info
 
+    def remove(self, user_id: UserId) -> None:
+        del self.contacts_by_user_id[user_id]
+
     def get(self, user_id: UserId) -> ContactInfo:
         try:
             return self.contacts_by_user_id[user_id]
@@ -112,6 +115,11 @@ class RoomManager:
             raise ChannelAlreadyAddedException()
         self.rooms_by_room_id[room_info.id] = room_info
         self.rooms_by_alias[room_info.alias] = room_info
+
+    def remove(self, handle: RoomId | RoomAlias) -> None:
+        info = self.get(handle)
+        del self.rooms_by_room_id[info.id]
+        del self.rooms_by_alias[info.alias]
 
     def get(self, handle: RoomId | RoomAlias) -> RoomInfo:
         try:
@@ -240,6 +248,12 @@ class MatrixChatter:
         contact_info = ContactInfo(contact_profile.id, room_id)
         self.contact_manager.add(contact_info)
 
+    async def remove_contact(self, contact: Contact) -> None:
+        contact_profile = self.vanity.create_user_profile(contact)
+        room_profile = self.vanity.create_room_profile(contact)
+        self.room_manager.remove(room_profile.alias)
+        self.contact_manager.remove(contact_profile.id)
+
     async def add_channel(self, channel_name: ChannelName, handler: MessageHandler) -> None:
         room_profile = self.vanity.create_room_profile(channel_name)
         room_id = await self.ensure_room(room_profile, is_direct=False)
@@ -248,10 +262,8 @@ class MatrixChatter:
         await self.send_room_invite(room_info.id, self.identity_user_id)
 
     async def remove_channel(self, channel_name: ChannelName) -> None:
-        assert False
-
-    async def remove_contact(self, contact: Contact) -> None:
-        assert False
+        room_profile = self.vanity.create_room_profile(channel_name)
+        self.room_manager.remove(room_profile.alias)
 
     async def send_direct(self, peer: Contact, message: Message | HTMLMessage) -> None:
         peer_user_id = self.vanity.create_user_id(peer)
@@ -364,7 +376,6 @@ class MatrixChatterManager:
             "m.room.member": self.handle_room_member,
             "m.room.message": self.handle_room_message,
         }
-        self.chatters: dict[Contact, MatrixChatter] = {}
 
     async def run(self):
         app = web.Application()
@@ -564,7 +575,7 @@ class MatrixChatterManager:
         space_id = await self.ensure_space(space_profile)
         await self.invite_user(space_id, identity_user_id)
 
-        chatter = MatrixChatter(
+        return MatrixChatter(
             identity,
             identity_user_id,
             space_id,
@@ -575,7 +586,3 @@ class MatrixChatterManager:
             contact_manager=self.contact_manager,
             mcm=self,
         )
-        if identity in self.chatters:
-            raise Exception(f"Chatter for {identity} already exists")
-        self.chatters[identity] = chatter
-        return chatter
