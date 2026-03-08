@@ -5,8 +5,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mcorechat.common import config_path_helper
-from mcorechat.matrix.common import DomainName, SecretText, HomeserverURL, UserId, AppNamespace, parse_user_id
+from mcorechat.common import config_path_helper, ContactName
+from mcorechat.matrix.common import (
+    DomainName,
+    SecretText,
+    HomeserverURL,
+    UserId,
+    AppNamespace,
+    parse_user_id,
+)
 
 default_listen = ("127.0.0.1", 9000)
 default_homeserver = HomeserverURL("http://127.0.0.1:8008")
@@ -36,7 +43,6 @@ class Config:
     domain: DomainName
     app_user_id: UserId
     app_namespace: AppNamespace
-    identity_user_id: UserId
     app_as_token: SecretText | None = None
     app_as_token_path: Path | None = None
     app_hs_token: SecretText | None = None
@@ -46,6 +52,7 @@ class Config:
     contact_suffix: str | None = " [contact]"
     ssl: SSLConfig | None = None
     dev_soft_fail: bool = False
+    identity_map: dict[ContactName, UserId] = dataclasses.field(default_factory=dict[ContactName, UserId])
 
     @staticmethod
     def from_data(root: Path, data: dict[str, Any]) -> "Config":
@@ -60,7 +67,7 @@ class Config:
             "app_namespace": AppNamespace,
             "listen": tuple,
             "ssl": functools.partial(SSLConfig.from_data, root),
-            "identity_user_id": parse_user_id,
+            "identity_map": lambda x: {ContactName(k): parse_user_id(v) for k, v in x.items()},
         }
         kwargs = data.copy()
         for key, cls in field_types.items():

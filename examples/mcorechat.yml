@@ -16,8 +16,10 @@ matrix:
   app_as_token_path: ~/.local/mcorechat/keys.yml
   app_hs_token_path: ~/.local/mcorechat/keys.yml
   app_namespace: mesh
-  identity_user_id: "@drew:example.com"
+  #  identity_user_id: "@drew:example.com"
   dev_soft_fail: true
+  identity_map:
+    82BF1A19: "@drew:example.com"
 
 logging_config_path: mcorechat_logging.yml
 dev_enable_send: true

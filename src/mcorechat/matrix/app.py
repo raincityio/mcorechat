@@ -34,6 +34,7 @@ from mcorechat.matrix.common import (
     RoomVisibility,
     AliasName,
     DisplayName,
+    UserProfile,
 )
 from mcorechat.matrix.config import Config
 from mcorechat.matrix.matrix_client import MatrixClient, parse_member_event
@@ -52,12 +53,6 @@ def get_secret(key_type: str, secret: SecretText | None, secret_path: Path | Non
             return SecretText(value[key_type])
         case _:
             raise Exception("Exactly one of secret_path or secret must be provided")
-
-
-@dataclasses.dataclass(frozen=True)
-class UserProfile:
-    id: UserId
-    display_name: DisplayName
 
 
 @dataclasses.dataclass(frozen=True)
@@ -334,7 +329,8 @@ class MatrixChatter:
                     raise
                 try:
                     await self.client.register_user(profile.id)
-                    await self.client.set_display_name(profile.id, profile.display_name)
+                    if profile.display_name is not None:
+                        await self.client.set_display_name(profile.id, profile.display_name)
                 except MatrixAPIError as e:
                     if e.errcode != "M_USER_IN_USE":
                         raise
@@ -567,7 +563,7 @@ class MatrixChatterManager:
     ) -> Chatter:
 
         # TODO eventually support more interesting mappings?
-        identity_user_id = self.config.identity_user_id
+        identity_user_id = self.config.identity_map[identity.name]
         vanity = Vanity(self.config, identity, identity_user_id)
 
         # set up space

@@ -64,9 +64,9 @@ class MatrixClient:
             return None
         return DisplayName(raw_display_name)
 
-    async def set_display_name(self, user_id: UserId, display_name: DisplayName) -> None:
+    async def set_display_name(self, user_id: UserId, display_name: DisplayName | None) -> None:
         payload = {
-            "displayname": display_name,
+            "displayname": "" if display_name is None else display_name,
         }
         await self._put(["profile", user_id, "displayname"], as_user_id=user_id, payload=payload)
 

@@ -163,8 +163,19 @@ class MatrixJSONEncoder(CommonJSONEncoder):
     def default(self, o: Any) -> Any:
         if type(o) in (RoomAlias, UserId, DisplayName, UserName, RoomId, RoomName, DomainName, AliasName):
             return str(o)
+        elif type(o) is UserProfile:
+            return {
+                "id": o.id,
+                "display_name": o.display_name,
+            }
         return super().default(o)
 
 
 def matrix_jdump(obj: Any) -> Any:
     return json.dumps(obj, cls=MatrixJSONEncoder)
+
+
+@dataclasses.dataclass(frozen=True)
+class UserProfile:
+    id: UserId
+    display_name: DisplayName | None
